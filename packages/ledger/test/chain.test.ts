@@ -1,9 +1,9 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
-  DOMAIN_TAG,
   appendEvent,
   computeHash,
+  DOMAIN_TAG,
   preimage,
   sealEvent,
   unsealed,

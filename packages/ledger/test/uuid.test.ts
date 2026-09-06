@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { UuidV7Generator, isUuidV7, timestampOf, uuidV7 } from '../src/uuid.js'
+import { isUuidV7, timestampOf, UuidV7Generator, uuidV7 } from '../src/uuid.js'
 
 /** @req FR-SECPL-001 */
 

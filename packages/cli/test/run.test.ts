@@ -2,9 +2,9 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { type LedgerStore, generateSigningKeyPair, openLedger } from '@pentrackr/ledger'
+import { generateSigningKeyPair, type LedgerStore, openLedger } from '@pentrackr/ledger'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { USAGE, run } from '../src/run.js'
+import { run, USAGE } from '../src/run.js'
 import { buildInfo, formatVersion } from '../src/version.js'
 
 const keys = generateSigningKeyPair()

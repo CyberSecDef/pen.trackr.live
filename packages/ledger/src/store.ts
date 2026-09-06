@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
-import { decode } from './cbor-decode.js'
 import { type CborValue, encode } from './cbor.js'
-import { type ChainVerdict, appendEvent, computeHash, unsealed, verifyChain } from './chain.js'
-import { type Envelope, type UnhashedEnvelope, parseEnvelope } from './envelope.js'
+import { decode } from './cbor-decode.js'
+import { appendEvent, type ChainVerdict, computeHash, unsealed, verifyChain } from './chain.js'
+import { type Envelope, parseEnvelope, type UnhashedEnvelope } from './envelope.js'
 import {
   type CheckpointClaim,
   publicKeyOf,

@@ -1,8 +1,8 @@
 import {
-  type LedgerStore,
-  ProjectionRunner,
   generateSigningKeyPair,
+  type LedgerStore,
   openLedger as openLedgerDefault,
+  ProjectionRunner,
   timelineProjection,
 } from '@pentrackr/ledger'
 import { buildInfo, formatVersion } from './version.js'

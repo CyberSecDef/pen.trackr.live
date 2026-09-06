@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { encode } from './cbor.js'
-import { type Envelope, type UnhashedEnvelope, parseUnhashedEnvelope } from './envelope.js'
+import { type Envelope, parseUnhashedEnvelope, type UnhashedEnvelope } from './envelope.js'
 
 /**
  * Hash chaining over the event log.
