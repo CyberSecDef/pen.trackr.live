@@ -44,10 +44,30 @@ const defaults: RunDeps = { openLedger: openLedgerDefault, env: process.env }
 const EX_USAGE = 64
 const EX_DATAERR = 65
 
+/** Raised for a malformed invocation; converted to EX_USAGE at the boundary. */
+class UsageError extends Error {}
+
+/**
+ * Reads an option's value.
+ *
+ * A flag present without a value is an error, never silently absent. The
+ * failure that motivated this is specific: `verify ledger.db --public-key`
+ * with the argument lost to shell expansion skipped key pinning entirely and
+ * reported "checkpoints ok" on a ledger whose checkpoints were signed by
+ * someone else's key — then advised passing the flag the operator had just
+ * passed. A security tool that answers a question the user did not ask, and
+ * says yes, is worse than one that fails.
+ */
 function option(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(`--${name}`)
   if (index === -1) return undefined
-  return argv[index + 1]
+
+  const value = argv[index + 1]
+  if (value === undefined) throw new UsageError(`--${name} requires a value`)
+  if (value.startsWith('--')) {
+    throw new UsageError(`--${name} requires a value, but was followed by ${value}`)
+  }
+  return value
 }
 
 function usageError(message: string): RunResult {
@@ -205,6 +225,15 @@ function keygen(): RunResult {
 
 /** Pure argv handler: returns what to print rather than printing. */
 export function run(argv: readonly string[], deps: RunDeps = defaults): RunResult {
+  try {
+    return dispatch(argv, deps)
+  } catch (error) {
+    if (error instanceof UsageError) return usageError(error.message)
+    throw error
+  }
+}
+
+function dispatch(argv: readonly string[], deps: RunDeps): RunResult {
   const [command, ...rest] = argv
 
   if (command === undefined || command === '-h' || command === '--help' || command === 'help') {

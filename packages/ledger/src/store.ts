@@ -180,10 +180,40 @@ export class LedgerStoreError extends Error {
   }
 }
 
+/**
+ * True only for a decoded CBOR map.
+ *
+ * `typeof x === 'object'` alone is not that test: a byte string decodes to a
+ * Uint8Array, which is an object and not an Array, and would pass. Zod rejected
+ * it downstream, so nothing invalid was ever accepted — but the guard read as
+ * though it were the enforcement when it was not, and the resulting failure was
+ * a raw ZodError thrown out of verify() rather than a verdict.
+ */
+function isCborMap(value: unknown): value is Record<string, CborValue> {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    !ArrayBuffer.isView(value) &&
+    !(value instanceof Map)
+  )
+}
+
 function rowToEnvelope(row: EventRow): Envelope {
-  const payload = decode(row.payload)
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new LedgerStoreError(`event ${row.event_id} has a payload that is not a map`)
+  let payload: unknown
+  try {
+    payload = decode(row.payload)
+  } catch (error) {
+    throw new LedgerStoreError(
+      `event ${row.event_id} has a payload that is not decodable: ${(error as Error).message}`,
+    )
+  }
+
+  if (!isCborMap(payload)) {
+    const kind = payload === null ? 'null' : (payload?.constructor?.name ?? typeof payload)
+    throw new LedgerStoreError(
+      `event ${row.event_id} has a payload that is not a map (decoded as ${kind})`,
+    )
   }
 
   return parseEnvelope({
@@ -196,7 +226,7 @@ function rowToEnvelope(row: EventRow): Envelope {
     engagement_id: row.engagement_id,
     schema_version: Number(row.schema_version),
     type: row.type,
-    payload: payload as Record<string, CborValue>,
+    payload,
     this_hash: row.this_hash,
   })
 }
@@ -340,9 +370,36 @@ export class LedgerStore {
     return rows.map((row) => ({ seq: Number(row.seq), envelope: rowToEnvelope(row) }))
   }
 
-  /** Verifies the whole chain as stored, reconstructing each event from its columns. */
+  /**
+   * Verifies the whole chain as stored, reconstructing each event from its
+   * columns.
+   *
+   * A row that cannot be reconstructed is reported as a verdict, not thrown. An
+   * operator running `verify` on a damaged ledger needs an answer naming the
+   * event, not a stack trace — and a corrupt ledger is exactly when the tool is
+   * being relied upon.
+   */
   verify(): ChainVerdict {
-    return verifyChain(this.read().map((stored) => stored.envelope))
+    const rows = this.db
+      .prepare('SELECT * FROM events ORDER BY seq ASC')
+      .all() as unknown as EventRow[]
+
+    const events: Envelope[] = []
+    for (const [index, row] of rows.entries()) {
+      try {
+        events.push(rowToEnvelope(row))
+      } catch (error) {
+        return {
+          ok: false,
+          index,
+          event_id: row.event_id,
+          failure: 'unreadable-event',
+          detail: (error as Error).message,
+        }
+      }
+    }
+
+    return verifyChain(events)
   }
 
   /** True when the stored hash of every event matches its reconstructed content. */

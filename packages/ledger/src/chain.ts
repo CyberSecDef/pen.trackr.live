@@ -79,6 +79,13 @@ export type ChainFailure =
   | 'genesis-has-prev'
   /** A later event claims no predecessor. */
   | 'orphaned-event'
+  /**
+   * An event could not be reconstructed from storage at all — a corrupt payload
+   * blob, a column holding something the schema rejects. Produced by the store
+   * rather than by chain walking, and kept in this union so a caller handling a
+   * verdict does not have to handle an exception as well.
+   */
+  | 'unreadable-event'
 
 export interface ChainOk {
   readonly ok: true

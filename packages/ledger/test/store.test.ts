@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { encode } from '../src/cbor.js'
 import type { UnhashedEnvelope } from '../src/envelope.js'
 import { type LedgerStore, LedgerStoreError, openLedger } from '../src/store.js'
 import { uuidV7 } from '../src/uuid.js'
@@ -298,5 +299,84 @@ describe('LedgerStore', () => {
     it('returns null for metadata that was never set', () => {
       expect(store.meta('absent')).toBeNull()
     })
+  })
+})
+
+/**
+ * Regression tests for review findings on PR #2.
+ */
+describe('a damaged ledger produces a verdict, not an exception', () => {
+  let directory: string
+  let path: string
+  let store: LedgerStore
+
+  const corruptPayload = (blob: Uint8Array): void => {
+    const raw = new DatabaseSync(path)
+    raw.exec('DROP TRIGGER events_no_update')
+    raw.prepare('UPDATE events SET payload = ?').run(blob)
+    raw.close()
+  }
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'pentrackr-damage-'))
+    path = join(directory, 'ledger.db')
+    store = openLedger(path)
+    store.append(event({ payload: { a: 1 } }))
+  })
+
+  afterEach(() => {
+    try {
+      store.close()
+    } catch {
+      // already closed
+    }
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  })
+
+  it('reports a byte-string payload rather than throwing', () => {
+    // A Uint8Array is an object and not an Array, so a typeof check alone
+    // admits it. Zod rejected it downstream, but as a raw ZodError escaping
+    // verify() — a stack trace where an operator needed an answer.
+    corruptPayload(encode(Uint8Array.of(1, 2, 3)))
+
+    const verdict = store.verify()
+    expect(verdict.ok).toBe(false)
+    if (!verdict.ok) {
+      expect(verdict.failure).toBe('unreadable-event')
+      expect(verdict.detail).toContain('not a map')
+      expect(verdict.detail).toContain('Uint8Array')
+    }
+  })
+
+  it.each([
+    ['an array', () => encode([1, 2, 3])],
+    ['an integer', () => encode(42)],
+    ['a text string', () => encode('nope')],
+    ['null', () => encode(null)],
+  ])('reports %s payload as unreadable', (_label, build) => {
+    corruptPayload(build())
+    const verdict = store.verify()
+    expect(verdict.ok).toBe(false)
+    if (!verdict.ok) expect(verdict.failure).toBe('unreadable-event')
+  })
+
+  it('reports an undecodable blob rather than throwing', () => {
+    corruptPayload(Uint8Array.of(0xff, 0xff, 0xff))
+    const verdict = store.verify()
+    expect(verdict.ok).toBe(false)
+    if (!verdict.ok) {
+      expect(verdict.failure).toBe('unreadable-event')
+      expect(verdict.detail).toContain('not decodable')
+    }
+  })
+
+  it('names the event that could not be read', () => {
+    corruptPayload(encode(42))
+    const verdict = store.verify()
+    expect(verdict.ok).toBe(false)
+    if (!verdict.ok) {
+      expect(verdict.index).toBe(0)
+      expect(verdict.event_id).toMatch(/^[0-9a-f-]{36}$/)
+    }
   })
 })

@@ -33,6 +33,25 @@ export interface Projection {
   apply(db: DatabaseSync, event: Envelope, seq: number): void
 }
 
+/**
+ * SQLite cannot parameterize an identifier, so a table name interpolated into
+ * DDL is executed as written. Today the names are code-defined, but Projection
+ * is a public interface and the plan has plugins supplying projections — at
+ * which point the name is attacker-influenced. Validated at registration so a
+ * bad name fails when the projection is declared rather than at rebuild time,
+ * and quoted at the point of use.
+ */
+const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/
+
+function quoteIdentifier(name: string): string {
+  if (!SAFE_IDENTIFIER.test(name)) {
+    throw new Error(
+      `unsafe projection table name: ${JSON.stringify(name)}. Table names must be a letter or underscore followed by letters, digits, or underscores.`,
+    )
+  }
+  return `"${name}"`
+}
+
 const STATE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS projection_state (
   name     TEXT    PRIMARY KEY,
@@ -56,6 +75,9 @@ export class ProjectionRunner {
     const names = projections.map((projection) => projection.name)
     if (new Set(names).size !== names.length) {
       throw new Error('projection names must be unique')
+    }
+    for (const projection of projections) {
+      for (const table of projection.tables) quoteIdentifier(table)
     }
 
     this.store = store
@@ -154,7 +176,7 @@ export class ProjectionRunner {
       this.db.exec('BEGIN')
       try {
         for (const table of projection.tables) {
-          this.db.exec(`DROP TABLE IF EXISTS ${table}`)
+          this.db.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(table)}`)
         }
         this.db.exec(projection.schema)
         this.setState(projection.name, projection.version, 0)

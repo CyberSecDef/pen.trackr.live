@@ -283,3 +283,33 @@ describe('ledger commands', () => {
     })
   })
 })
+
+/**
+ * Regression tests for review findings on PR #2.
+ *
+ * The first is the one that mattered: a flag present without its value was
+ * treated as absent, so key pinning was silently skipped.
+ */
+describe('an option present without a value is a usage error', () => {
+  const deps = { openLedger, env: {} }
+
+  it.each([
+    ['verify', ['verify', 'x.db', '--public-key']],
+    ['log --limit', ['log', 'x.db', '--limit']],
+    ['log --type', ['log', 'x.db', '--type']],
+  ])('rejects %s with no value', (_label, argv) => {
+    const result = run(argv, deps)
+    expect(result.exitCode).toBe(64)
+    expect(result.stdout).toContain('requires a value')
+  })
+
+  it('rejects a flag followed by another flag', () => {
+    const result = run(['log', 'x.db', '--type', '--limit', '5'], deps)
+    expect(result.exitCode).toBe(64)
+    expect(result.stdout).toContain('--limit')
+  })
+
+  it('names the offending option', () => {
+    expect(run(['verify', 'x.db', '--public-key'], deps).stdout).toContain('--public-key')
+  })
+})

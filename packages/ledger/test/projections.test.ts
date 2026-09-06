@@ -256,3 +256,80 @@ describe('ProjectionRunner', () => {
     })
   })
 })
+
+/**
+ * Regression tests for a review finding on PR #2.
+ *
+ * SQLite cannot parameterize an identifier, so a table name interpolated into
+ * DDL executes as written. Projection is a public interface and the plan has
+ * plugins supplying projections, at which point the name is not ours.
+ */
+describe('projection table names are validated, not interpolated blindly', () => {
+  let directory: string
+  let store: LedgerStore
+
+  const withTables = (tables: readonly string[]): Projection => ({
+    name: 'hostile',
+    version: 1,
+    tables,
+    schema: 'CREATE TABLE IF NOT EXISTS t1 (seq INTEGER)',
+    apply() {
+      // nothing; this projection exists to exercise the identifier path
+    },
+  })
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'pentrackr-sqli-'))
+    store = openLedger(join(directory, 'ledger.db'))
+  })
+
+  afterEach(() => {
+    try {
+      store.close()
+    } catch {
+      // already closed
+    }
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  })
+
+  it('does not execute SQL smuggled through a table name', () => {
+    // Before the fix this dropped the canary.
+    store.projectionDatabase().exec('CREATE TABLE canary (x INTEGER)')
+    expect(() => new ProjectionRunner(store, [withTables(['t1; DROP TABLE canary; --'])])).toThrow(
+      /unsafe projection table name/,
+    )
+
+    const survived = store
+      .projectionDatabase()
+      .prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'canary'")
+      .get() as { n: number }
+    expect(Number(survived.n)).toBe(1)
+  })
+
+  it('rejects the bad name at registration, not at rebuild', () => {
+    // Failing when the projection is declared beats failing halfway through a
+    // rebuild that has already dropped other tables.
+    expect(() => new ProjectionRunner(store, [withTables(['bad name'])])).toThrow(
+      /unsafe projection table name/,
+    )
+  })
+
+  it.each([
+    ['a quote', 'tbl"; --'],
+    ['a space', 'two words'],
+    ['a leading digit', '9lives'],
+    ['a hyphen', 'kebab-case'],
+    ['empty', ''],
+    ['a backtick', 'tbl`'],
+    ['a newline', 'tbl\nDROP TABLE x'],
+  ])('rejects a table name containing %s', (_label, table) => {
+    expect(() => new ProjectionRunner(store, [withTables([table])])).toThrow(/unsafe/)
+  })
+
+  it.each(['timeline', 'type_counts', '_private', 'T9'])(
+    'accepts the ordinary name %j',
+    (table) => {
+      expect(() => new ProjectionRunner(store, [withTables([table])])).not.toThrow()
+    },
+  )
+})
