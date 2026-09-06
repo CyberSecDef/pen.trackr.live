@@ -44,3 +44,4 @@ pnpm-debug.log*
 Thumbs.db
 .idea/
 *.swp
+dist-bundle/

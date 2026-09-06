@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url'
 /**
  * Build identity for this binary.
  *
- * Reported by `pentrackr --version`. The commit is stamped at package time and
- * is absent in a working-tree build, which is itself useful information: an
- * unstamped binary is not a release artifact.
+ * Reported by `pentrackr --version`. The commit is stamped into the bundled
+ * manifest at package time and is absent in a working-tree build, which is
+ * itself useful information: an unstamped binary is not a release artifact.
  */
 export interface BuildInfo {
   readonly version: string
@@ -17,19 +17,24 @@ export interface BuildInfo {
   readonly arch: string
 }
 
-function readPackageVersion(): string {
-  // dist/version.js -> package root is two levels up.
+interface Manifest {
+  readonly version?: string
+  /** Written by scripts/package.mjs when assembling a release bundle. */
+  readonly pentrackrCommit?: string
+}
+
+function readManifest(): Manifest {
+  // Compiled output sits one directory below the package manifest, both in the
+  // workspace (dist/version.js) and in a release bundle (lib/version.js).
   const here = dirname(fileURLToPath(import.meta.url))
-  const manifest = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')) as {
-    version?: string
-  }
-  return manifest.version ?? '0.0.0'
+  return JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')) as Manifest
 }
 
 export function buildInfo(): BuildInfo {
+  const manifest = readManifest()
   return {
-    version: readPackageVersion(),
-    commit: process.env.PENTRACKR_COMMIT ?? null,
+    version: manifest.version ?? '0.0.0',
+    commit: process.env.PENTRACKR_COMMIT ?? manifest.pentrackrCommit ?? null,
     node: process.versions.node,
     platform: process.platform,
     arch: process.arch,
