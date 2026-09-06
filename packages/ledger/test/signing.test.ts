@@ -133,14 +133,8 @@ describe('private keys are imported without inventing a public half', () => {
 
   it('produces signatures that verify under the derived public key', () => {
     const pair = generateSigningKeyPair()
-    const claim = {
-      event_count: 1,
-      head_hash: 'c'.repeat(64),
-      prev_checkpoint_signature: null,
-      ts_utc: '2026-09-06T00:00:00.000Z',
-      public_key: publicKeyOf(pair.privateKey),
-    }
-    expect(verifyCheckpointSignature(claim, signCheckpoint(claim, pair.privateKey))).toBe(true)
+    const signed = claim({ event_count: 1, public_key: publicKeyOf(pair.privateKey) })
+    expect(verifyCheckpointSignature(signed, signCheckpoint(signed, pair.privateKey))).toBe(true)
   })
 
   it('round-trips an arbitrary seed rather than only generated ones', () => {

@@ -26,7 +26,13 @@ export const CHECKPOINT_DOMAIN = 'pentrackr/checkpoint/1'
 const DOMAIN_BYTES = new TextEncoder().encode(CHECKPOINT_DOMAIN)
 
 export interface SigningKeyPair {
-  /** Raw 32-byte Ed25519 private scalar, hex encoded. */
+  /**
+   * Raw 32-byte Ed25519 private seed, hex encoded.
+   *
+   * A seed, not a scalar: the signing scalar is derived from these bytes by
+   * SHA-512 and clamping. The distinction matters when reading RFC 8032 or
+   * comparing against another implementation's key material.
+   */
   readonly privateKey: string
   /** Raw 32-byte Ed25519 public key, hex encoded. */
   readonly publicKey: string
@@ -67,8 +73,11 @@ export function generateSigningKeyPair(): SigningKeyPair {
  */
 const PKCS8_ED25519_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex')
 
+/** Length of the Ed25519 private seed, in bytes. */
+const SEED_BYTES = 32
+
 /**
- * Imports a raw private scalar.
+ * Imports a raw private seed.
  *
  * Deliberately not JWK. A JWK OKP private key carries both `d` and `x`, and we
  * hold only `d` — the earlier implementation supplied 32 zero bytes as a
@@ -82,6 +91,9 @@ const PKCS8_ED25519_PREFIX = Buffer.from('302e020100300506032b657004220420', 'he
  */
 function privateKeyObject(privateKeyHex: string) {
   const material = hexToBytes(privateKeyHex, 'private key')
+  if (material.length !== SEED_BYTES) {
+    throw new TypeError(`private key must be ${SEED_BYTES} bytes`)
+  }
   return createPrivateKey({
     key: Buffer.concat([PKCS8_ED25519_PREFIX, Buffer.from(material)]),
     format: 'der',
