@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { decode } from './cbor-decode.js'
 import { type CborValue, encode } from './cbor.js'
 import { type ChainVerdict, appendEvent, computeHash, unsealed, verifyChain } from './chain.js'
@@ -27,6 +27,10 @@ import {
  * is make the resulting chain verify — that is the hash chain's job, and the two
  * layers answer different questions. Triggers prevent accidents and casual
  * edits; the chain detects deliberate ones.
+ *
+ * Storage is Node's built-in `node:sqlite` rather than a native addon (ADR
+ * 0013). It is the same SQLite engine, statically linked into Node, with no
+ * compile step on any platform.
  *
  * Payloads are stored as canonical CBOR blobs, and reads reconstruct the
  * envelope and recompute its hash. That is deliberately more work than hashing
@@ -113,7 +117,7 @@ interface EventRow {
   readonly engagement_id: string
   readonly schema_version: number
   readonly type: string
-  readonly payload: Buffer
+  readonly payload: Uint8Array
 }
 
 export interface ReadOptions {
@@ -177,7 +181,7 @@ export class LedgerStoreError extends Error {
 }
 
 function rowToEnvelope(row: EventRow): Envelope {
-  const payload = decode(new Uint8Array(row.payload))
+  const payload = decode(row.payload)
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new LedgerStoreError(`event ${row.event_id} has a payload that is not a map`)
   }
@@ -190,7 +194,7 @@ function rowToEnvelope(row: EventRow): Envelope {
     tz: row.tz,
     operator_id: row.operator_id,
     engagement_id: row.engagement_id,
-    schema_version: row.schema_version,
+    schema_version: Number(row.schema_version),
     type: row.type,
     payload: payload as Record<string, CborValue>,
     this_hash: row.this_hash,
@@ -198,15 +202,15 @@ function rowToEnvelope(row: EventRow): Envelope {
 }
 
 export class LedgerStore {
-  private readonly db: Database.Database
+  private readonly db: DatabaseSync
 
   constructor(filename: string) {
-    this.db = new Database(filename)
+    this.db = new DatabaseSync(filename)
     // WAL for concurrent readers; FULL so a completed append survives a process
     // death rather than sitting in an OS buffer (NFR-006).
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('synchronous = FULL')
-    this.db.pragma('foreign_keys = ON')
+    this.db.exec('PRAGMA journal_mode = WAL')
+    this.db.exec('PRAGMA synchronous = FULL')
+    this.db.exec('PRAGMA foreign_keys = ON')
     this.db.exec(SCHEMA)
 
     const existing = this.meta('schema_version')
@@ -236,7 +240,7 @@ export class LedgerStore {
 
   count(): number {
     const row = this.db.prepare('SELECT COUNT(*) AS n FROM events').get() as { n: number }
-    return row.n
+    return Number(row.n)
   }
 
   head(): Envelope | null {
@@ -263,8 +267,8 @@ export class LedgerStore {
       )
     `)
 
-    const transaction = this.db.transaction((candidate: Omit<UnhashedEnvelope, 'prev_hash'>) => {
-      const sealed = appendEvent(this.head(), candidate)
+    return this.inTransaction(() => {
+      const sealed = appendEvent(this.head(), event)
       insert.run({
         event_id: sealed.event_id,
         prev_hash: sealed.prev_hash,
@@ -276,12 +280,29 @@ export class LedgerStore {
         engagement_id: sealed.engagement_id,
         schema_version: sealed.schema_version,
         type: sealed.type,
-        payload: Buffer.from(encode(sealed.payload as CborValue)),
+        payload: encode(sealed.payload as CborValue),
       })
       return sealed
     })
+  }
 
-    return transaction(event)
+  /**
+   * Runs a function inside a transaction.
+   *
+   * node:sqlite provides no transaction helper, so this is the five lines it
+   * would have given us. Rollback on throw is the point: a partially applied
+   * append would leave a chain whose head does not match its contents.
+   */
+  private inTransaction<T>(body: () => T): T {
+    this.db.exec('BEGIN')
+    try {
+      const result = body()
+      this.db.exec('COMMIT')
+      return result
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   read(options: ReadOptions = {}): StoredEvent[] {
@@ -303,9 +324,9 @@ export class LedgerStore {
 
     const rows = this.db
       .prepare(`SELECT * FROM events${where} ORDER BY seq ASC${limit}`)
-      .all(...parameters) as EventRow[]
+      .all(...parameters) as unknown as EventRow[]
 
-    return rows.map((row) => ({ seq: row.seq, envelope: rowToEnvelope(row) }))
+    return rows.map((row) => ({ seq: Number(row.seq), envelope: rowToEnvelope(row) }))
   }
 
   /** Verifies the whole chain as stored, reconstructing each event from its columns. */
@@ -365,9 +386,9 @@ export class LedgerStore {
   checkpoints(): StoredCheckpoint[] {
     const rows = this.db
       .prepare('SELECT * FROM checkpoints ORDER BY seq ASC')
-      .all() as CheckpointRow[]
+      .all() as unknown as CheckpointRow[]
     return rows.map((row) => ({
-      seq: row.seq,
+      seq: Number(row.seq),
       event_count: row.event_count,
       head_hash: row.head_hash,
       prev_checkpoint_signature: row.prev_checkpoint_signature,
@@ -465,7 +486,7 @@ export class LedgerStore {
    * mechanism that refuses a sqlite3 shell. Encapsulation here would be
    * theatre, since anything with the file path can open its own connection.
    */
-  projectionDatabase(): Database.Database {
+  projectionDatabase(): DatabaseSync {
     return this.db
   }
 

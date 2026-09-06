@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import type { DatabaseSync } from 'node:sqlite'
 import type { Envelope } from './envelope.js'
 import { eventNamespace } from './events.js'
 import type { LedgerStore } from './store.js'
@@ -30,7 +30,7 @@ export interface Projection {
   /** Tables owned by this projection, dropped and recreated on rebuild. */
   readonly tables: readonly string[]
   /** Applies one event. Must be idempotent for a given seq. */
-  apply(db: Database.Database, event: Envelope, seq: number): void
+  apply(db: DatabaseSync, event: Envelope, seq: number): void
 }
 
 const STATE_SCHEMA = `
@@ -49,7 +49,7 @@ interface StateRow {
 
 export class ProjectionRunner {
   private readonly store: LedgerStore
-  private readonly db: Database.Database
+  private readonly db: DatabaseSync
   private readonly projections: readonly Projection[]
 
   constructor(store: LedgerStore, projections: readonly Projection[]) {
@@ -102,12 +102,12 @@ export class ProjectionRunner {
     for (const projection of this.projections) {
       const state = this.state(projection.name)
 
-      if (state !== null && state.version !== projection.version) {
+      if (state !== null && Number(state.version) !== projection.version) {
         applied[projection.name] = this.rebuild(projection.name)
         continue
       }
 
-      const from = state?.last_seq ?? 0
+      const from = state === null ? 0 : Number(state.last_seq)
       applied[projection.name] = this.applyFrom(projection, from)
     }
 
@@ -121,15 +121,19 @@ export class ProjectionRunner {
       return 0
     }
 
-    const run = this.db.transaction(() => {
+    this.db.exec('BEGIN')
+    try {
       let last = fromSeq
       for (const entry of pending) {
         projection.apply(this.db, entry.envelope, entry.seq)
         last = entry.seq
       }
       this.setState(projection.name, projection.version, last)
-    })
-    run()
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
 
     return pending.length
   }
@@ -147,14 +151,18 @@ export class ProjectionRunner {
 
     let total = 0
     for (const projection of targets) {
-      const reset = this.db.transaction(() => {
+      this.db.exec('BEGIN')
+      try {
         for (const table of projection.tables) {
           this.db.exec(`DROP TABLE IF EXISTS ${table}`)
         }
         this.db.exec(projection.schema)
         this.setState(projection.name, projection.version, 0)
-      })
-      reset()
+        this.db.exec('COMMIT')
+      } catch (error) {
+        this.db.exec('ROLLBACK')
+        throw error
+      }
       total += this.applyFrom(projection, 0)
     }
 

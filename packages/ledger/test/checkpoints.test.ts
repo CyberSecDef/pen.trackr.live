@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { UnhashedEnvelope } from '../src/envelope.js'
 import { generateSigningKeyPair } from '../src/signing.js'
@@ -40,7 +40,7 @@ describe('checkpoints', () => {
   let store: LedgerStore
 
   const drop = (sql: string): void => {
-    const raw = new Database(path)
+    const raw = new DatabaseSync(path)
     raw.exec('DROP TRIGGER IF EXISTS events_no_delete')
     raw.exec('DROP TRIGGER IF EXISTS events_no_update')
     raw.exec('DROP TRIGGER IF EXISTS checkpoints_no_delete')
@@ -199,7 +199,7 @@ describe('checkpoints', () => {
     it('refuses to update or delete checkpoints through the normal triggers', () => {
       store.append(event(0))
       store.checkpoint(keys.privateKey)
-      const raw = new Database(path)
+      const raw = new DatabaseSync(path)
       expect(() => raw.exec('UPDATE checkpoints SET event_count = 0')).toThrow(/append-only/)
       expect(() => raw.exec('DELETE FROM checkpoints')).toThrow(/append-only/)
       raw.close()

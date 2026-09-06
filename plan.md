@@ -469,6 +469,7 @@ Per the SRS's own instruction, so no breaking migration is needed later: wireles
 | D18 | Commit granularity | **One commit per phase, one pull request per milestone.** | 5 Sep 2026 (M0) |
 | D19 | Local installs | **Permitted on the development host, but notify and pause for approval first.** Applies to system packages and to project dependencies that build native code. | 5 Sep 2026 (M1) |
 | D20 | Testing posture | **Test liberally** — every exported function gets direct unit tests; property-based tests for invariants; coverage measured per milestone as a diagnostic, not a target (§8). | 5 Sep 2026 (M1) |
+| D22 | SQLite engine | **`node:sqlite`**, not `better-sqlite3`. Native compilation broke Windows CI at M1; ADR 0013 records the trade-off, including that the built-in API is experimental in Node 22. | 5 Sep 2026 (M1) |
 | D21 | Signing key input | **Read from `PENTRACKR_SIGNING_KEY`, never from argv.** A key passed as an argument lands in shell history, `ps` output, and eventually this tool's own command ledger — the one it exists to protect. | 5 Sep 2026 (M1) |
 
 ---

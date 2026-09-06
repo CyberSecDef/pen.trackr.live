@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { type LedgerStore, generateSigningKeyPair, openLedger } from '@pentrackr/ledger'
-import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { USAGE, run } from '../src/run.js'
 import { buildInfo, formatVersion } from '../src/version.js'
@@ -165,9 +165,9 @@ describe('ledger commands', () => {
     it('reports a broken chain with the failing event', () => {
       appendEvents(4)
       store.close()
-      const raw = new Database(path)
+      const raw = new DatabaseSync(path)
       raw.exec('DROP TRIGGER events_no_delete')
-      raw.prepare('DELETE FROM events WHERE seq = 2').run()
+      raw.exec('DELETE FROM events WHERE seq = 2')
       raw.close()
 
       const result = run(['verify', path], deps())
@@ -180,9 +180,9 @@ describe('ledger commands', () => {
       appendEvents(6)
       store.checkpoint(keys.privateKey)
       store.close()
-      const raw = new Database(path)
+      const raw = new DatabaseSync(path)
       raw.exec('DROP TRIGGER events_no_delete')
-      raw.prepare('DELETE FROM events WHERE seq > 3').run()
+      raw.exec('DELETE FROM events WHERE seq > 3')
       raw.close()
 
       const result = run(['verify', path], deps())

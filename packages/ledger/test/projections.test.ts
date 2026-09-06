@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type Database from 'better-sqlite3'
+import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Envelope, UnhashedEnvelope } from '../src/envelope.js'
 import { type Projection, ProjectionRunner, timelineProjection } from '../src/projections.js'
@@ -213,7 +213,7 @@ describe('ProjectionRunner', () => {
       version: 1,
       tables: ['type_counts'],
       schema: 'CREATE TABLE IF NOT EXISTS type_counts (type TEXT PRIMARY KEY, n INTEGER NOT NULL);',
-      apply(db: Database.Database, envelope: Envelope) {
+      apply(db: DatabaseSync, envelope: Envelope) {
         db.prepare(
           `INSERT INTO type_counts (type, n) VALUES (?, 1)
            ON CONFLICT(type) DO UPDATE SET n = n + 1`,

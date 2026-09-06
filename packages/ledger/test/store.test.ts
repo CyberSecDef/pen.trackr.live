@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { UnhashedEnvelope } from '../src/envelope.js'
 import { type LedgerStore, LedgerStoreError, openLedger } from '../src/store.js'
@@ -134,24 +134,22 @@ describe('LedgerStore', () => {
   describe('append-only enforcement', () => {
     it('refuses an UPDATE at the database level', () => {
       store.append(event())
-      const raw = new Database(path)
-      expect(() => raw.prepare("UPDATE events SET type = 'command.finished'").run()).toThrow(
-        /append-only/,
-      )
+      const raw = new DatabaseSync(path)
+      expect(() => raw.exec("UPDATE events SET type = 'command.finished'")).toThrow(/append-only/)
       raw.close()
     })
 
     it('refuses a DELETE at the database level', () => {
       store.append(event())
-      const raw = new Database(path)
-      expect(() => raw.prepare('DELETE FROM events').run()).toThrow(/append-only/)
+      const raw = new DatabaseSync(path)
+      expect(() => raw.exec('DELETE FROM events')).toThrow(/append-only/)
       raw.close()
     })
 
     it('refuses edits from a connection that has never seen this code', () => {
       // The point of enforcing in the database: a sqlite3 shell is bound too.
       store.append(event())
-      const raw = new Database(path)
+      const raw = new DatabaseSync(path)
       expect(() => raw.exec("UPDATE events SET payload = X'a0'")).toThrow(/append-only/)
       raw.close()
       expect(store.verify().ok).toBe(true)
@@ -165,9 +163,9 @@ describe('LedgerStore', () => {
       store.append(event({ payload: { index: 1 } }))
       store.append(event({ payload: { index: 2 } }))
 
-      const raw = new Database(path)
+      const raw = new DatabaseSync(path)
       raw.exec('DROP TRIGGER events_no_delete')
-      raw.prepare('DELETE FROM events WHERE seq = 2').run()
+      raw.exec('DELETE FROM events WHERE seq = 2')
       raw.close()
 
       const verdict = store.verify()
@@ -179,9 +177,9 @@ describe('LedgerStore', () => {
       // Verification reconstructs from columns rather than hashing a stored
       // preimage, so a column-only edit is caught rather than trusted.
       store.append(event())
-      const raw = new Database(path)
+      const raw = new DatabaseSync(path)
       raw.exec('DROP TRIGGER events_no_update')
-      raw.prepare("UPDATE events SET tz = 'UTC'").run()
+      raw.exec("UPDATE events SET tz = 'UTC'")
       raw.close()
 
       const verdict = store.verify()
@@ -195,7 +193,7 @@ describe('LedgerStore', () => {
       // A second connection sees it, so a crash of this process after append
       // returns cannot lose an already-finished event.
       const appended = store.append(event())
-      const other = new Database(path, { readonly: true })
+      const other = new DatabaseSync(path, { readOnly: true })
       const row = other.prepare('SELECT this_hash FROM events').get() as { this_hash: string }
       other.close()
       expect(row.this_hash).toBe(appended.this_hash)
