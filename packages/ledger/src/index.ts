@@ -45,3 +45,11 @@ export {
   type UnhashedEnvelope,
 } from './envelope.js'
 export { UuidV7Generator, isUuidV7, timestampOf, uuidV7, type UuidV7Options } from './uuid.js'
+export {
+  LedgerStore,
+  LedgerStoreError,
+  SCHEMA_VERSION,
+  openLedger,
+  type ReadOptions,
+  type StoredEvent,
+} from './store.js'
