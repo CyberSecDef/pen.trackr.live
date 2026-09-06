@@ -66,3 +66,4 @@ export {
   type CheckpointClaim,
   type SigningKeyPair,
 } from './signing.js'
+export { ProjectionRunner, timelineProjection, type Projection } from './projections.js'

@@ -456,6 +456,19 @@ export class LedgerStore {
     return { ok: true, checkpoints: stored.length }
   }
 
+  /**
+   * The underlying connection, for projection tables only.
+   *
+   * Handing out the handle is safe precisely because immutability is enforced
+   * by database triggers rather than by keeping the connection private: a
+   * projection that tried to rewrite history would be refused by the same
+   * mechanism that refuses a sqlite3 shell. Encapsulation here would be
+   * theatre, since anything with the file path can open its own connection.
+   */
+  projectionDatabase(): Database.Database {
+    return this.db
+  }
+
   close(): void {
     this.db.close()
   }
