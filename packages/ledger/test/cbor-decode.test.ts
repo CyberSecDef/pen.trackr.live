@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { CborDecodeError, decode, decodeHex } from '../src/cbor-decode.js'
 import { encode, encodeHex } from '../src/cbor.js'
+import { CborDecodeError, decode, decodeHex } from '../src/cbor-decode.js'
 
 /**
  * @req FR-SECPL-002
@@ -209,7 +209,7 @@ describe('dangerous key names round-trip as ordinary data', () => {
       string,
       unknown
     >
-    expect(Object.prototype.hasOwnProperty.call(decoded, '__proto__')).toBe(true)
+    expect(Object.hasOwn(decoded, '__proto__')).toBe(true)
     expect(Object.keys(decoded)).toEqual(['__proto__'])
   })
 

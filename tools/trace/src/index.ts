@@ -1,4 +1,4 @@
-export { collectAnnotations, type Annotation, type AnnotationKind } from './annotations.js'
+export { type Annotation, type AnnotationKind, collectAnnotations } from './annotations.js'
 export {
   buildReport,
   formatReport,
@@ -6,4 +6,4 @@ export {
   type Report,
   type RequirementStatus,
 } from './report.js'
-export { parseSpec, type Phase, type Requirement } from './spec.js'
+export { type Phase, parseSpec, type Requirement } from './spec.js'
