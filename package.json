@@ -23,11 +23,14 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "trace": "tsc --build tools/trace && node tools/trace/dist/cli.js",
-    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run trace"
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test:coverage && pnpm run trace",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@types/node": "^22.10.5",
+    "@vitest/coverage-v8": "^5.0.0",
+    "fast-check": "^4.9.0",
     "typescript": "^5.8.0",
     "vite": "^7.1.12",
     "vitest": "^5.0.0"

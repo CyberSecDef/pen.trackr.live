@@ -43,8 +43,9 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Test
-        run: pnpm run test
+      # D20: coverage thresholds are enforced, not merely reported.
+      - name: Test with coverage
+        run: pnpm run test:coverage
 
       - name: Traceability
         run: pnpm run trace -- --check

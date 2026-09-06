@@ -1,12 +1,9 @@
 {
-  "name": "@pentrackr/cli",
+  "name": "@pentrackr/ledger",
   "version": "0.0.0",
-  "description": "Pen Trackr command-line entry point",
+  "description": "Append-only, hash-chained event ledger",
   "license": "Apache-2.0",
   "type": "module",
-  "bin": {
-    "pentrackr": "./dist/cli.js"
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -23,6 +20,6 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
-    "@pentrackr/ledger": "workspace:*"
+    "zod": "^4.5.4"
   }
 }
