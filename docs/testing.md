@@ -8,11 +8,14 @@ change is not done until it is green on all three.
 | Environment | Role |
 |---|---|
 | Linux dev host | Primary. Fast iteration, full suite in under a second. |
-| `baldr` — Windows 11 Pro (26200) | Real Windows hardware, reachable over SSH as `admin`. Node 22.23.2, matching CI exactly. |
+| `baldr` — Windows 11 Pro (26200) | Real Windows hardware on the maintainer's local network, reachable over SSH. Node 22.23.2, matching CI exactly. |
 | GitHub Actions | The gate. `ubuntu-latest`, `windows-latest`, `macos-latest`. |
 | macOS | **CI only.** No hardware available, so macOS is verified by absence of failure rather than by observation. |
 
 ## Running the suite on `baldr`
+
+Host address, account, and key are kept out of this repository — see
+[What stays out of this repository](#what-stays-out-of-this-repository).
 
 ```powershell
 $env:Path = "C:\tools\node-v22.23.2-win-x64;C:\Program Files\Git\cmd;$env:Path"
@@ -47,3 +50,23 @@ from one is not a number about the product.
 `baldr` is a convenience, not a substitute. CI runs macOS, runs on a clean
 checkout every time, and cannot be affected by state left behind on a machine
 someone has been poking at. A change is merged on CI's verdict, not `baldr`'s.
+
+## What stays out of this repository
+
+This repository is public. Two categories never enter it, and both are judgement
+calls rather than things a scanner will catch for you:
+
+- **Real engagement or lab data.** The `htba` corpus used for parser fixtures
+  contains genuine credentials and proof-of-access flags, so it is loaded from a
+  local path at test time and never committed (plan.md §12).
+- **Real infrastructure details.** Host addresses, account names, key paths, and
+  network layout stay out — for the maintainer's own machines as much as for any
+  client's. Naming a host is fine; saying how to reach it is not.
+
+The second rule was added after the fact: an earlier version of this file named
+the SSH account for the Windows host, and plan.md carried its LAN address. Both
+were caught in review rather than by CI, because secret scanning matches
+credential *patterns* and neither of those is one. Writing the rule down is the
+mitigation; a regex broad enough to catch it would flag the RFC1918 ranges that
+legitimately appear throughout a penetration-testing tool's documentation and
+tests.
