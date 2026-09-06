@@ -8,6 +8,11 @@ import { collectAnnotations } from '../src/annotations.js'
  * The scanner decides whether a requirement counts as claimed, so it gates every
  * future milestone's definition of done. It shipped in M0 without direct tests;
  * this suite closes that gap.
+ *
+ * This file is marked @req-ignore-file because its fixtures contain literal
+ * annotation strings. Without the marker they read as real claims and the gate
+ * reports several requirements as tested but unimplemented — which is exactly
+ * how the need for the marker was discovered.
  */
 describe('collectAnnotations', () => {
   let root: string
@@ -134,5 +139,16 @@ describe('collectAnnotations', () => {
 
   it('returns nothing for an empty tree', () => {
     expect(collectAnnotations(root)).toEqual([])
+  })
+
+  it('skips a file marked with the ignore marker', () => {
+    write('src/fixtures.ts', ['// @req-ignore-file', '// @req FR-CMD-001'].join('\n'))
+    expect(collectAnnotations(root)).toEqual([])
+  })
+
+  it('skips the marked file but still scans its neighbours', () => {
+    write('src/fixtures.ts', ['// @req-ignore-file', '// @req FR-CMD-001'].join('\n'))
+    write('src/real.ts', '// @req NFR-003')
+    expect(collectAnnotations(root).map((a) => a.id)).toEqual(['NFR-003'])
   })
 })

@@ -20,6 +20,21 @@ export interface Annotation {
 
 const ANNOTATION = /@req\s+((?:FR-[A-Z]+|NFR)-\d{3})/g
 
+/**
+ * A file containing this marker is skipped entirely.
+ *
+ * Needed because a file can *discuss* annotations without *making* them — the
+ * scanner's own tests contain literal "@req FR-CMD-001" strings as fixtures.
+ * Without an opt-out those read as claims, and the gate reports a requirement
+ * as tested but unimplemented. Found the first time the gate ran for real.
+ *
+ * This is the only escape hatch, and it is file-level and explicit on purpose:
+ * anything subtler (ignoring annotations inside string literals, say) would be
+ * a parser guessing at intent, and a gate that guesses is a gate that can be
+ * argued with.
+ */
+const IGNORE_MARKER = '@req-ignore-file'
+
 const SKIP_DIRECTORIES = new Set([
   '.git',
   'node_modules',
@@ -78,8 +93,11 @@ export function collectAnnotations(root: string): Annotation[] {
 
   for (const file of walk(root)) {
     const relativePath = relative(root, file)
+    const contents = readFileSync(file, 'utf8')
+    if (contents.includes(IGNORE_MARKER)) continue
+
     const kind: AnnotationKind = isTestPath(relativePath) ? 'test' : 'impl'
-    const lines = readFileSync(file, 'utf8').split('\n')
+    const lines = contents.split('\n')
 
     lines.forEach((line, index) => {
       for (const match of line.matchAll(ANNOTATION)) {

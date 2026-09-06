@@ -212,7 +212,7 @@ describe('ProjectionRunner', () => {
       name: 'type_counts',
       version: 1,
       tables: ['type_counts'],
-      schema: `CREATE TABLE IF NOT EXISTS type_counts (type TEXT PRIMARY KEY, n INTEGER NOT NULL);`,
+      schema: 'CREATE TABLE IF NOT EXISTS type_counts (type TEXT PRIMARY KEY, n INTEGER NOT NULL);',
       apply(db: Database.Database, envelope: Envelope) {
         db.prepare(
           `INSERT INTO type_counts (type, n) VALUES (?, 1)

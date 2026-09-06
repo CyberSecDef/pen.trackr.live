@@ -1,8 +1,8 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.4
+**Plan version:** 0.5
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** M0 complete. Executing M1. Decision log at §14; milestone progress tracked inline in §6.
+**Status:** M0 and M1 complete. Executing M2. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
 
@@ -224,10 +224,32 @@ Project rails: toolchain, CI, packaging, traceability, and the decision record.
 - **The three-OS matrix earned its place immediately.** Its first real run failed on Windows only, on CRLF checkout, while Linux and macOS were green. Line-ending normalization is now enforced by `.gitattributes` — and this is a correctness property, not tidiness: a hash chain computed over content whose bytes vary by checkout platform would be indefensible. Had the matrix been deferred to M14 as originally tempting, this would have been found after the ledger was built on top of it.
 - **The dependency audit also caught something real on its first run**: vitest 2.1.9 carried a critical advisory (GHSA-5xrq-8626-4rwp). Upgraded to vitest 5 with vite 7 pinned to satisfy the peer range. A security tool shipping known-vulnerable dependencies is not a defensible position, so `pnpm audit` stays a blocking gate rather than a warning.
 
-### M1 — Ledger spine (M, ~40h) — *the foundation*
-Event envelope, canonical CBOR against RFC 8949 vectors, hash chain, append-only enforcement, interval signing, `verify`, `seal`, projection framework with rebuild.
-**Closes:** FR-SECPL-001/002, NFR-009, NFR-006, §25.2 taxonomy.
-**Exit:** property tests — arbitrary sequences verify; any single-byte mutation is detected and localized; two exports of a sealed ledger are byte-identical; killing the process mid-append never loses a completed event.
+### M1 — Ledger spine (M, ~40h) — ✅ COMPLETE — *the foundation*
+
+| Phase | Task | Status |
+|----|----|----|
+| M1.1 | Deterministic CBOR encoder (RFC 8949 §4.2.1) + UUIDv7 generator | ✅ |
+| M1.2 | Event envelope schemas + the §25.2 taxonomy (52 types) | ✅ |
+| M1.3 | Hash chain: link, verify, first-divergence reporting | ✅ |
+| M1.4 | Strict canonical CBOR decoder *(added mid-milestone)* | ✅ |
+| M1.5 | SQLite store, append-only enforced by triggers | ✅ |
+| M1.6 | Ed25519 interval checkpoints | ✅ |
+| M1.7 | Projection framework with rebuild | ✅ |
+| M1.8 | CLI: `verify`, `seal`, `log`, `keygen` | ✅ |
+
+**Closes:** FR-SECPL-001, FR-SECPL-002, NFR-006, NFR-009, NFR-010, §25.2 taxonomy.
+
+**Exit criteria and results:** arbitrary event sequences verify; a single-byte mutation anywhere is detected and localized to its index; re-encoding is byte-stable; an event is committed and visible to a second connection by the time `append()` returns.
+
+**M1.4 was not in the original phase list.** Verifying a stored event means reconstructing it and recomputing its hash — which catches column corruption that hashing a stored blob would not — and that requires a decoder. Written strict: it rejects non-shortest heads, indefinite lengths, unsorted map keys, floats, tags, and trailing bytes, so storage becomes an independent second detector of modification rather than a channel that normalizes tampering away.
+
+**Findings worth carrying forward:**
+
+- **`cbor-x` was installed under D19 approval and then removed.** It is not canonical on three counts — preserves map insertion order, emits non-shortest map headers, encodes floats at full width. ADR 0004 anticipated exactly this ("a library's canonical mode is a claim until tested"), so the determinism test was written before anything depended on it. The encoder is now hand-written, ~250 lines, verified against RFC 8949 Appendix A.
+- **A real encoding collision existed and was fixed.** `TextEncoder` maps unpaired surrogates to U+FFFD, so `'\uD800'` and `'\uD801'` — distinct strings — encoded to identical bytes. Two different events could share a hash preimage for one keystroke's effort. Ill-formed text is now refused.
+- **Three bugs were found by tests in code I had just written**: the UUIDv7 generator reseeded its counter on a backwards clock step (producing duplicate identifiers under fixed entropy — reachable via NTP correction mid-engagement); the decoder read CBOR major-type-7 payload bytes instead of the additional-information bits, so float rejection never fired at all; and `verifyCheckpoints` accepted checkpoints signed by *any* key, so an attacker with write access could replace them wholesale.
+- **The truncation gap is closed, and stated.** A hash chain cannot detect tail truncation — every remaining link stays intact. ADR 0012 documents it, a test asserts that a truncated chain still verifies, and checkpoints (M1.6) close it. `verify` says so in its own output when no checkpoints exist rather than reporting an unqualified "ok".
+- **Three layers, kept distinct.** Triggers prevent accidents (a raw `sqlite3` shell is refused). The chain detects modification and reordering. Checkpoints detect deletion from the end. Conflating them is how a security tool ends up overstating what it proves, so each has its own tests, including one that drops the triggers and asserts the chain catches what gets through.
 
 ### M2 — Projects, states, core API (M, ~40h)
 Engagement CRUD and metadata, the §3.2 state machine including Lab mode, project switcher, loopback API + WS, OpenAPI generation, keychain token.
@@ -447,6 +469,7 @@ Per the SRS's own instruction, so no breaking migration is needed later: wireles
 | D18 | Commit granularity | **One commit per phase, one pull request per milestone.** | 5 Sep 2026 (M0) |
 | D19 | Local installs | **Permitted on the development host, but notify and pause for approval first.** Applies to system packages and to project dependencies that build native code. | 5 Sep 2026 (M1) |
 | D20 | Testing posture | **Test liberally** — every exported function gets direct unit tests; property-based tests for invariants; coverage measured per milestone as a diagnostic, not a target (§8). | 5 Sep 2026 (M1) |
+| D21 | Signing key input | **Read from `PENTRACKR_SIGNING_KEY`, never from argv.** A key passed as an argument lands in shell history, `ps` output, and eventually this tool's own command ledger — the one it exists to protect. | 5 Sep 2026 (M1) |
 
 ---
 
