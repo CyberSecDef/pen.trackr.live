@@ -332,6 +332,18 @@ M0–M9 are effectively sequential; each is substrate for the next. After M9 the
 
 ## 8. Testing strategy
 
+**Posture: test liberally.** Tests are written alongside code, not after it, and the default is that every exported function has direct unit tests covering its success path, its failure paths, and its boundaries. A module with no test file is treated as incomplete rather than as pending.
+
+This is not thoroughness for its own sake. Three properties of this specific product make cheap tests unusually valuable:
+
+- **The traceability gate needs them.** A requirement cannot reach `complete` without a test annotation (§6, M0.3), so testing is the mechanism by which work counts as done at all.
+- **The ledger's value is its correctness.** A hash chain that is subtly wrong is worse than no hash chain, because it invites confidence it cannot support.
+- **The cadence demands them.** On an evenings-and-weekends schedule with three-week gaps, a dense test suite is what lets a cold restart change code confidently instead of re-deriving why it worked.
+
+Where behaviour is expressible as an invariant rather than an example — chain verification, canonical encoding, scope verdicts, redaction — property-based tests (`fast-check`) are preferred over example tables, and the example tables are kept as regression anchors for bugs actually found.
+
+Coverage is measured and reported per milestone. It is a diagnostic for finding untested branches, not a target to be gamed: a line-coverage number can be driven up by tests that assert nothing, so the review question is always whether the failure modes are covered, not whether the percentage rose.
+
 | Layer | Approach |
 |----|----|
 | Ledger | Property-based: arbitrary sequences, tamper detection, crash-during-append, deterministic re-export, RFC 8949 vectors. |
@@ -433,6 +445,8 @@ Per the SRS's own instruction, so no breaking migration is needed later: wireles
 | D16 | Package naming | **`@pentrackr/*` scoped**; the CLI still publishes as plain `pentrackr`. npm org to be claimed before first publish. | 5 Sep 2026 (M0) |
 | D17 | Lint and format | **Biome**, replacing ESLint + Prettier (ADR 0011). | 5 Sep 2026 (M0) |
 | D18 | Commit granularity | **One commit per phase, one pull request per milestone.** | 5 Sep 2026 (M0) |
+| D19 | Local installs | **Permitted on the development host, but notify and pause for approval first.** Applies to system packages and to project dependencies that build native code. | 5 Sep 2026 (M1) |
+| D20 | Testing posture | **Test liberally** — every exported function gets direct unit tests; property-based tests for invariants; coverage measured per milestone as a diagnostic, not a target (§8). | 5 Sep 2026 (M1) |
 
 ---
 
