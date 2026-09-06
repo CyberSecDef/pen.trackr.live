@@ -63,3 +63,44 @@ repository ends up running a two-year-old action.
 Every job has `timeout-minutes: 20`. The default is 360, so a hung test would
 burn six hours across six jobs. Not hypothetical: a counter-saturation test in
 this project looped forever locally before it was fixed.
+
+## Test runtime, and when to act on it
+
+Measured 6 September 2026, on the first green run after the M1 fixes:
+
+| | Windows | Linux |
+|---|---|---|
+| Slowest file (`packages/ledger/test/store.test.ts`) | 29.5s | 1.4s |
+| Whole suite, wall clock | 30.5s | ~1s |
+
+The four slowest files sum to about 81 seconds but the suite finishes in 30.5,
+so vitest is parallelising across workers and the wall clock is bounded by the
+single slowest file rather than the total. The slowest individual test is around
+half a second, so nothing is near the 60-second per-test timeout — that ceiling
+is not masking a hang.
+
+The twenty-fold gap is fsync cost. The ledger runs `synchronous = FULL`, so every
+append is a real disk sync: roughly 20ms on a CI runner's shared storage against
+2ms on real Windows hardware (`docs/testing.md`).
+
+**Threshold: revisit if Windows suite wall clock crosses 5 minutes.**
+
+Thirty seconds against a 20-minute job timeout is comfortable, and the store
+gains tests in every milestone from M2 through M5, so this grows roughly with the
+number of appends. The point of naming a number is to notice it as a trend rather
+than as a surprise.
+
+Two apparent fixes are the wrong ones, recorded here so they are not rediscovered
+as good ideas:
+
+- **Weakening `synchronous = FULL` for tests.** A suite that passes by exercising
+  a configuration the product never runs in is worse than a slow suite. This was
+  already declined once, when the per-test timeout was raised instead.
+- **Adding a batch-append API to make tests faster.** That shapes production code
+  around the test harness, and the durability property being tested is precisely
+  the per-append sync.
+
+Splitting the slowest file helps less than it appears: the next file is already
+24.6 seconds, so the wall clock would only fall to about 25. If the threshold is
+ever crossed, the honest levers are reducing the number of appends in tests that
+are not about durability, or accepting a longer Windows job.
