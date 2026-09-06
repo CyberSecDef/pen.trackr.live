@@ -12,6 +12,7 @@ except through a pull request that passed them.
 | `security` | `secret scan` | gitleaks over full history |
 | `security` | `dependency audit` | `pnpm audit --audit-level moderate` |
 | `security` | `repository hygiene` | No internal infrastructure details (see `docs/testing.md`) |
+| `canary` | `node 26 (next LTS)` | The suite on the Node version this project will move to — **not required** |
 
 All three operating systems are required, not advisory. NFR-008 makes them
 equally first class, and five of the seven CI failures this project has had were
@@ -156,3 +157,37 @@ Two things address that, and neither is restructuring the workflow:
 The general lesson is worth keeping: a job behind a `needs:` gate verifies
 nothing while the gate is closed, so anything it alone can catch wants a cheap
 equivalent upstream.
+
+## The Node canary
+
+`canary.yml` runs the full check on Node 26, the next LTS, while the project
+still ships on Node 22.
+
+It is **not** a required status check. It fails visibly, so a break is a task
+rather than a footnote, but it never blocks a merge: the product runs on the
+version in `.nvmrc`, and a problem in a future runtime is information rather than
+a reason to stop work.
+
+It earned the slot before it existed. Running the suite on Node 26 by hand, while
+working out when to move off Node 22, produced 19 failures from an Ed25519 key
+import that built a JWK with a fabricated public half — 32 zero bytes standing in
+for a public key we do not hold. Node 22 accepts that; Node 26 rejects it, and
+Node 26 is right. Every test passed on the version we pin, so nothing in the
+suite was wrong and nothing would have surfaced it.
+
+**A red canary is a task.** Fix it, or record why it is acceptable and when it
+will be revisited. A canary left red is worse than no canary, because it teaches
+everyone to ignore a signal that was installed precisely to be noticed.
+
+### Node version plan
+
+| | |
+|---|---|
+| Now | Node 22 (`.nvmrc`), Maintenance since Oct 2025, end-of-life **30 April 2027** |
+| Skip | Node 24 — enters Maintenance 20 October 2026, six weeks after this was written |
+| Target | **Node 26**, Active LTS from 28 October 2026, supported to April 2029 |
+
+Node 24 is deliberately skipped: adopting it now would mean taking a version
+about to leave Active LTS, and migrating twice. Moving 22 to 26 once, shortly
+after 26 becomes Active LTS, is one migration instead of two — and the canary is
+what makes that a formality rather than a scramble.

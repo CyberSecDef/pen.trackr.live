@@ -74,10 +74,19 @@ the failure. It does not, today: on a Windows 11 machine with no Visual Studio,
 working ConPTY (`cmd.exe`, exit 0, data flowing).
 
 The distinction that matters is that better-sqlite3 fell through to `node-gyp`
-because no prebuild matched, while node-pty's prebuild did. So the risk is
-**deferred rather than eliminated**: a future Node ABI without a matching
-prebuild returns the fallback and the same failure. `.nvmrc` pinning Node 22 is
-what keeps that under our control rather than the runner image's.
+because no prebuild matched, while node-pty's prebuild did.
+
+**Amended 6 September 2026.** The original wording called the risk "deferred
+rather than eliminated", on the assumption that a future Node ABI would need a
+fresh prebuild. That was too pessimistic: node-pty depends on `node-addon-api`
+and ships prebuilds keyed by platform rather than by ABI (`prebuilds/win32-x64/`,
+not a Node version), which is the N-API pattern — one binary across Node majors.
+Verified by installing it under Node 26 on a Windows machine with no toolchain,
+where it installed from the same prebuild and spawned a working ConPTY.
+
+So a Node major upgrade does not reopen this. What would reopen it is node-pty
+dropping prebuilds for a platform, which is a supply decision rather than a
+version one.
 
 ## Alternatives rejected
 
