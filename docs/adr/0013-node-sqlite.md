@@ -66,6 +66,19 @@ whose other warnings concern scope violations.
 per-OS packaging matrix stands. This removes one native dependency, not the
 category.
 
+**Measured, 6 September 2026.** `node-pty`'s install script is
+`node scripts/prebuild.js || node-gyp rebuild` — the same fall-back-to-compile
+shape that broke Windows CI here, so the question was whether M4 reintroduces
+the failure. It does not, today: on a Windows 11 machine with no Visual Studio,
+`node-pty@1.1.0` installed in two seconds from a shipped prebuild and spawned a
+working ConPTY (`cmd.exe`, exit 0, data flowing).
+
+The distinction that matters is that better-sqlite3 fell through to `node-gyp`
+because no prebuild matched, while node-pty's prebuild did. So the risk is
+**deferred rather than eliminated**: a future Node ABI without a matching
+prebuild returns the fallback and the same failure. `.nvmrc` pinning Node 22 is
+what keeps that under our control rather than the runner image's.
+
 ## Alternatives rejected
 
 **Patch the CI toolchain** — force a newer node-gyp so it recognises VS 18.
