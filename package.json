@@ -28,12 +28,12 @@
     "hygiene": "tsc --build tools/hygiene && node tools/hygiene/dist/cli.js"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.9.4",
-    "@types/node": "^22.10.5",
+    "@biomejs/biome": "2.5.12",
+    "@types/node": "^26.4.1",
     "@vitest/coverage-v8": "^5.0.0",
     "fast-check": "^4.9.0",
-    "typescript": "^5.8.0",
-    "vite": "^7.1.12",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vitest": "^5.0.0"
   }
 }
