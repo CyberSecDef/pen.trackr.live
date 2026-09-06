@@ -26,7 +26,13 @@ export const CHECKPOINT_DOMAIN = 'pentrackr/checkpoint/1'
 const DOMAIN_BYTES = new TextEncoder().encode(CHECKPOINT_DOMAIN)
 
 export interface SigningKeyPair {
-  /** Raw 32-byte Ed25519 private scalar, hex encoded. */
+  /**
+   * Raw 32-byte Ed25519 private seed, hex encoded.
+   *
+   * A seed, not a scalar: the signing scalar is derived from these bytes by
+   * SHA-512 and clamping. The distinction matters when reading RFC 8032 or
+   * comparing against another implementation's key material.
+   */
   readonly privateKey: string
   /** Raw 32-byte Ed25519 public key, hex encoded. */
   readonly publicKey: string
@@ -60,24 +66,48 @@ export function generateSigningKeyPair(): SigningKeyPair {
   }
 }
 
-/** Derives the public key from a private key, so a caller cannot pair them wrongly. */
-export function publicKeyOf(privateKeyHex: string): string {
-  const material = hexToBytes(privateKeyHex, 'private key')
-  const key = createPrivateKey({
-    format: 'jwk',
-    key: { kty: 'OKP', crv: 'Ed25519', d: base64url(material), x: base64url(new Uint8Array(32)) },
-  })
-  const pub = createPublicKey(key).export({ format: 'jwk' }) as { x?: string }
-  if (pub.x === undefined) throw new Error('unexpected Ed25519 key export shape')
-  return Buffer.from(fromBase64url(pub.x)).toString('hex')
-}
+/**
+ * PKCS8 DER wrapper for a raw Ed25519 seed: version, algorithm identifier
+ * (1.3.101.112), and an OCTET STRING holding the 32 private bytes. The prefix is
+ * fixed, so the whole encoding is this constant followed by the seed.
+ */
+const PKCS8_ED25519_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex')
 
+/** Length of the Ed25519 private seed, in bytes. */
+const SEED_BYTES = 32
+
+/**
+ * Imports a raw private seed.
+ *
+ * Deliberately not JWK. A JWK OKP private key carries both `d` and `x`, and we
+ * hold only `d` — the earlier implementation supplied 32 zero bytes as a
+ * placeholder `x`, which is a private key paired with a public key that is not
+ * its own. Node 22 accepted it; Node 26 rejects it with "Invalid JWK OKP key",
+ * and Node 26 is right. Constructing a key object that claims a false public
+ * half is the wrong thing to do in a module whose output is a signature.
+ *
+ * PKCS8 needs no public half, so the question does not arise, and Node derives
+ * the true `x` from the seed itself.
+ */
 function privateKeyObject(privateKeyHex: string) {
   const material = hexToBytes(privateKeyHex, 'private key')
+  if (material.length !== SEED_BYTES) {
+    throw new TypeError(`private key must be ${SEED_BYTES} bytes`)
+  }
   return createPrivateKey({
-    format: 'jwk',
-    key: { kty: 'OKP', crv: 'Ed25519', d: base64url(material), x: base64url(new Uint8Array(32)) },
+    key: Buffer.concat([PKCS8_ED25519_PREFIX, Buffer.from(material)]),
+    format: 'der',
+    type: 'pkcs8',
   })
+}
+
+/** Derives the public key from a private key, so a caller cannot pair them wrongly. */
+export function publicKeyOf(privateKeyHex: string): string {
+  const pub = createPublicKey(privateKeyObject(privateKeyHex)).export({ format: 'jwk' }) as {
+    x?: string
+  }
+  if (pub.x === undefined) throw new Error('unexpected Ed25519 key export shape')
+  return Buffer.from(fromBase64url(pub.x)).toString('hex')
 }
 
 function publicKeyObject(publicKeyHex: string) {
