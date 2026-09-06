@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      zod:
-        specifier: ^4.5.4
-        version: 4.5.4
     devDependencies:
       '@biomejs/biome':
         specifier: 1.9.4
@@ -40,7 +36,11 @@ importers:
         specifier: workspace:*
         version: link:../ledger
 
-  packages/ledger: {}
+  packages/ledger:
+    dependencies:
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
 
   tools/trace: {}
 
