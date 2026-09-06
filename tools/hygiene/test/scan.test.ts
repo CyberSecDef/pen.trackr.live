@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { isScannable } from '../src/cli.js'
+import { isScannable } from '../src/files.js'
 import { ALLOW_FILE_MARKER, ALLOW_MARKER, RULES } from '../src/rules.js'
 import { formatFindings, scanText } from '../src/scan.js'
 
@@ -247,13 +247,13 @@ describe('isScannable', () => {
  * the drift the duplication risks fails a test rather than going unnoticed.
  */
 describe('generated-file lists agree across the two scanners', () => {
-  it('hygiene and trace skip the same set of generated files', async () => {
+  it('hygiene and trace skip the same set of generated files', () => {
     const traceSource = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), '../../trace/src/annotations.ts'),
       'utf8',
     )
     const hygieneSource = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../src/cli.ts'),
+      join(dirname(fileURLToPath(import.meta.url)), '../src/files.ts'),
       'utf8',
     )
 
