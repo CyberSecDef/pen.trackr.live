@@ -69,6 +69,14 @@ Ungrouped is not the same as sequential: several major pull requests can be open
 at once. What changed is that each can now be taken or refused on its own merits,
 not that they arrive one after another.
 
+**`@types/node` major updates are ignored outright.** Those types describe a
+runtime, so they must track the runtime rather than float ahead of it. The first
+npm batch proposed `@types/node` 26 against a Node 22 runtime, which would have
+had TypeScript accept APIs that do not exist where the code actually runs — a
+mismatch the compiler cannot warn about, since the types are the thing being
+trusted. Moving to a new Node major is a deliberate act that changes `.nvmrc`,
+`engines`, and these types together.
+
 When a major bump does arrive, green CI is necessary but not sufficient. Check
 that the action still *does* its work: an action that passes because it silently
 stopped doing anything is worse than one that fails. For the v2-to-v3
