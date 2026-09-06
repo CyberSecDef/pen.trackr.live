@@ -1,6 +1,6 @@
 # 0004 — Canonical CBOR event envelope with a SHA-256 hash chain
 
-**Status:** Accepted (5 September 2026)
+**Status:** Accepted (5 September 2026). Preimage formula superseded by [0012](0012-hash-preimage-construction.md); the rest stands.
 **Requirements:** FR-SECPL-001, FR-SECPL-002, NFR-009, NFR-010
 
 ## Context

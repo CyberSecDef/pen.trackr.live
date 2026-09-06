@@ -21,3 +21,4 @@ rejected and why.
 | [0009](0009-distribution-and-reports.md) | Per-OS bundles; Typst for PDF, docx for Word | Accepted |
 | [0010](0010-module-split.md) | Open core in this repository, closed pack separate | Accepted |
 | [0011](0011-biome-over-eslint.md) | Biome instead of ESLint and Prettier | Accepted |
+| [0012](0012-hash-preimage-construction.md) | Hash preimage: domain separation, no redundant suffix | Accepted (supersedes part of 0004) |

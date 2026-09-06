@@ -15,6 +15,20 @@ export {
   type EventType,
 } from './events.js'
 export {
+  DOMAIN_TAG,
+  appendEvent,
+  computeHash,
+  preimage,
+  sealEvent,
+  unsealed,
+  verifyChain,
+  verifyEvent,
+  type ChainBroken,
+  type ChainFailure,
+  type ChainOk,
+  type ChainVerdict,
+} from './chain.js'
+export {
   ENVELOPE_FIELDS,
   HASH_PATTERN,
   envelopeSchema,
