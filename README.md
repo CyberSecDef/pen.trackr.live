@@ -81,7 +81,7 @@ Full detail, including per-milestone exit criteria and honest effort estimates, 
 
 | File | What it is |
 |----|----|
-| [`req_spec.md`](req_spec.md) | Software Requirements Specification v0.2 — 31 sections, ~180 numbered requirements. Frozen as the baseline. |
+| [`req_spec.md`](req_spec.md) | Software Requirements Specification v0.2 — 31 sections, 216 numbered requirements. Frozen as the baseline. |
 | [`plan.md`](plan.md) | Development plan v0.3 — architecture decisions, milestones, testing strategy, risk register, and every deliberate divergence from the SRS. |
 | `LICENSE` | Apache-2.0 |
 

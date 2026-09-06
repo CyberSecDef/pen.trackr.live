@@ -1,0 +1,21 @@
+# Normalize line endings on checkout everywhere.
+#
+# Without this, Windows checks out CRLF and the formatter fails on Windows only
+# (caught by the three-OS matrix in M0). Evidence and ledger tooling also must
+# not have byte content vary by platform: a hash chain over content that differs
+# by checkout platform would be indefensible.
+* text=auto eol=lf
+
+# Shell and PowerShell scripts keep LF; PowerShell handles it fine.
+*.sh   text eol=lf
+*.ps1  text eol=lf
+
+# Binary artifacts must never be normalized.
+*.png  binary
+*.jpg  binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary
+*.docx binary
+*.exe  binary
+*.dll  binary

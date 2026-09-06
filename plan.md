@@ -1,14 +1,14 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.3
+**Plan version:** 0.4
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** All decisions closed (§14). Actionable as written.
+**Status:** M0 complete. Executing M1. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
 
 ## 1. How I intend to build this
 
-The SRS describes 31 subsystems and ~180 numbered requirements. Built breadth-first, that becomes a half-finished workbench with twelve 70%-done panels and no engagement ever run through it. Five rules:
+The SRS describes 31 subsystems and 216 numbered requirements (140 MVP, 62 V2, 14 V3 — measured by `tools/trace`, not estimated). Built breadth-first, that becomes a half-finished workbench with twelve 70%-done panels and no engagement ever run through it. Five rules:
 
 1. **Spine first, panels second.** The ledger is the product; everything else produces or consumes events. Ledger, blob store, runner, and scope engine are a working vertical slice before any client gets a second sidebar section.
 2. **The riskiest thing goes early.** Cross-platform PTY wrapping with argv observation (§5, NFR-003, NFR-008) is the hardest requirement and the one most likely to force an architecture change. It lands in M4.
@@ -195,9 +195,34 @@ The closed module (§2.5) is a **separate repository** shipping plugins into thi
 
 Sizes are relative effort; hour estimates are rough and exist only to make §3's arithmetic checkable.
 
-### M0 — Rails (S, ~20h)
-pnpm monorepo, three-OS CI matrix, packaging job (D9), **secret scanning and public-repo hygiene**, Apache-2.0 LICENSE, README, ADRs, `pentrackr --version`, and `tools/trace` — which parses every FR/NFR row from `req_spec.md`, cross-references `@req` annotations, and fails CI when a milestone claims an ID it hasn't annotated.
-**Exit:** green on three OSes; a real installable bundle from CI; traceability baseline at 0 / ~180.
+### M0 — Rails (S, ~20h) — ✅ COMPLETE
+
+Project rails: toolchain, CI, packaging, traceability, and the decision record.
+
+| Phase | Task | Status |
+|----|----|----|
+| M0.1 | pnpm workspace, TypeScript project references, Biome, Vitest | ✅ |
+| M0.2 | `@pentrackr/cli` — `pentrackr --version` with build identity | ✅ |
+| M0.3 | `@pentrackr/trace` — requirement traceability extractor | ✅ |
+| M0.4 | CI: three-OS matrix, secret scanning, dependency audit | ✅ |
+| M0.5 | Per-OS release bundle + smoke test | ✅ |
+| M0.6 | ADRs 0001–0011 | ✅ |
+| M0.7 | Plan update, corrected baseline counts | ✅ |
+| M0.8 | Pull request, CI green on three OSes | ✅ |
+
+**Exit criteria and results:**
+
+- *Green on three OSes* — lint, typecheck, 24 tests, and the traceability check run on `ubuntu-latest`, `windows-latest`, and `macos-latest`.
+- *A real installable bundle from CI* — `pentrackr-<version>-<platform>-<arch>.tar.gz` assembled and smoke-tested (`--version`) on every OS, with the commit stamped into the bundled manifest.
+- *Traceability baseline* — **216 requirements** (140 MVP, 62 V2, 14 V3), 0 claimed. The earlier "~180" was an estimate; 216 is measured and cross-checked against an independent grep.
+
+**Findings worth carrying forward:**
+
+- The Debian-packaged Node 22 on the development machine is built **without TypeScript support** (`ERR_NO_TYPESCRIPT`), so native type stripping is not available. Tooling runs compiled output instead. Relying on `--experimental-strip-types` would have been a portability trap.
+- The traceability tool's coverage rule is deliberately asymmetric: claiming an ID without both an implementation and a test fails CI, and so does annotating an ID the SRS does not define, but leaving a requirement unclaimed does not. Only false claims break the build.
+- Node single-executable packaging is **deferred**, not done. It buys little until native addons exist (M4), and claiming it now would be theatre. The tarball bundle is the real M0 deliverable.
+- **The three-OS matrix earned its place immediately.** Its first real run failed on Windows only, on CRLF checkout, while Linux and macOS were green. Line-ending normalization is now enforced by `.gitattributes` — and this is a correctness property, not tidiness: a hash chain computed over content whose bytes vary by checkout platform would be indefensible. Had the matrix been deferred to M14 as originally tempting, this would have been found after the ledger was built on top of it.
+- **The dependency audit also caught something real on its first run**: vitest 2.1.9 carried a critical advisory (GHSA-5xrq-8626-4rwp). Upgraded to vitest 5 with vite 7 pinned to satisfy the peer range. A security tool shipping known-vulnerable dependencies is not a defensible position, so `pnpm audit` stays a blocking gate rather than a warning.
 
 ### M1 — Ledger spine (M, ~40h) — *the foundation*
 Event envelope, canonical CBOR against RFC 8949 vectors, hash chain, append-only enforcement, interval signing, `verify`, `seal`, projection framework with rebuild.
@@ -405,6 +430,9 @@ Per the SRS's own instruction, so no breaking migration is needed later: wireles
 | D13 | Existing automations | **Inspiration only** — hardened first-party scripts authored here (Δ6). | 5 Sep 2026 |
 | D14 | Spec baseline | **SRS v0.2 frozen**; this plan carries all deltas (§2). | 5 Sep 2026 |
 | D15 | Corpus backfill | **Cap as a real demo project**, other nine as fixtures (Δ7). | 5 Sep 2026 |
+| D16 | Package naming | **`@pentrackr/*` scoped**; the CLI still publishes as plain `pentrackr`. npm org to be claimed before first publish. | 5 Sep 2026 (M0) |
+| D17 | Lint and format | **Biome**, replacing ESLint + Prettier (ADR 0011). | 5 Sep 2026 (M0) |
+| D18 | Commit granularity | **One commit per phase, one pull request per milestone.** | 5 Sep 2026 (M0) |
 
 ---
 
