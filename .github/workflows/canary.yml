@@ -1,0 +1,62 @@
+name: canary
+
+# Runs the suite on the Node version this project will move to, before it has to.
+#
+# Deliberately NOT a required status check. It fails loudly and visibly, so a
+# break is a task rather than a footnote, but it never blocks a merge — the
+# project still ships on the version in .nvmrc, and a problem in a future runtime
+# is information rather than a reason to stop work.
+#
+# It earned the slot before it existed: running the suite on Node 26 by hand
+# turned up 19 failures from an Ed25519 key import that constructed a JWK with a
+# fabricated public half. Node 22 accepted it, so every test passed on the
+# version we pin. That class of defect is invisible to a single-version matrix.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    # Weekly, so a break introduced by a Node release surfaces on its own rather
+    # than waiting for someone to open a pull request.
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: canary-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  next-lts:
+    # One operating system is enough. The failures this catches are
+    # version-specific rather than platform-specific, and the three-OS matrix in
+    # `ci` already covers the other axis.
+    name: node 26 (next LTS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Deliberately not node-version-file: the point is to run ahead of
+          # .nvmrc, not alongside it.
+          node-version: '26'
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check
+        run: pnpm run check
+
+      - name: Report the version actually exercised
+        if: always()
+        run: |
+          echo "canary ran on $(node --version); .nvmrc pins $(cat .nvmrc)"
