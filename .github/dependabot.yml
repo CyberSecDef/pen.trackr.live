@@ -38,6 +38,18 @@ updates:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # @types/node describes a runtime, so it must track the runtime rather
+      # than float ahead of it. This project pins Node 22 (.nvmrc, engines), and
+      # a proposed bump to @types/node 26 would have had TypeScript accept APIs
+      # that do not exist on the version the code actually runs on — a mismatch
+      # the compiler cannot warn about, because the types are the thing being
+      # trusted.
+      #
+      # Minor and patch updates still flow. Moving to a new Node major is a
+      # deliberate act that changes .nvmrc, engines, and these types together.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # Security advisories still open their own pull request regardless of
       # grouping, which is the signal worth interrupting for.
