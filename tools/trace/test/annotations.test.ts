@@ -152,3 +152,33 @@ describe('collectAnnotations', () => {
     expect(collectAnnotations(root).map((a) => a.id)).toEqual(['NFR-003'])
   })
 })
+
+describe('generated files', () => {
+  let root: string
+
+  const write = (relativePath: string, contents: string): void => {
+    const full = join(root, relativePath)
+    mkdirSync(join(full, '..'), { recursive: true })
+    writeFileSync(full, contents)
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'pentrackr-generated-'))
+  })
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  })
+
+  it.each(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock'])('skips %s', (name) => {
+    // A lockfile is a build artifact, not a place anyone writes @req.
+    write(name, '// @req FR-CMD-001')
+    expect(collectAnnotations(root)).toEqual([])
+  })
+
+  it('still scans a hand-written yaml beside a lockfile', () => {
+    write('pnpm-lock.yaml', '// @req FR-CMD-001')
+    write('ci.yml', '# @req NFR-008')
+    expect(collectAnnotations(root).map((a) => a.id)).toEqual(['NFR-008'])
+  })
+})

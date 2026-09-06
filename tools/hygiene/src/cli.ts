@@ -13,6 +13,28 @@ import { type Finding, formatFindings, scanText } from './scan.js'
 
 const SCANNED_EXTENSIONS = /\.(md|ts|tsx|mts|cts|js|mjs|cjs|json|ya?ml|sh|ps1)$/
 
+/**
+ * Generated files, skipped regardless of extension.
+ *
+ * Same reasoning as the traceability scanner: a lockfile is a build artifact.
+ * Here there is a second reason — a lockfile records dependency sources, and a
+ * git-over-SSH dependency URL embeds an account and a host, which matches the
+ * ssh-target rule exactly. No such entry exists today, but the first git
+ * dependency anyone adds would produce a false positive, and a check that cries
+ * wolf gets switched off.
+ *
+ * Writing that sentence with a literal example URL tripped the rule, which is a
+ * fair demonstration that it fires. The example is described rather than
+ * written: the allow marker is for content that genuinely must stay, and
+ * spending it on an illustration would set a precedent worth avoiding.
+ */
+const GENERATED_FILES = new Set(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'bun.lockb'])
+
+function isScannable(file: string): boolean {
+  const name = file.split(/[\\/]/).pop() ?? file
+  return !GENERATED_FILES.has(name) && SCANNED_EXTENSIONS.test(file)
+}
+
 function git(args: readonly string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 }
@@ -27,15 +49,13 @@ function git(args: readonly string[]): string {
 function workingFiles(): string[] {
   const tracked = git(['ls-files']).split('\n')
   const untracked = git(['ls-files', '--others', '--exclude-standard']).split('\n')
-  return [...new Set([...tracked, ...untracked])].filter(
-    (f) => f !== '' && SCANNED_EXTENSIONS.test(f),
-  )
+  return [...new Set([...tracked, ...untracked])].filter((f) => f !== '' && isScannable(f))
 }
 
 function stagedFiles(): string[] {
   return git(['diff', '--cached', '--name-only', '--diff-filter=ACMR'])
     .split('\n')
-    .filter((f) => f !== '' && SCANNED_EXTENSIONS.test(f))
+    .filter((f) => f !== '' && isScannable(f))
 }
 
 /**

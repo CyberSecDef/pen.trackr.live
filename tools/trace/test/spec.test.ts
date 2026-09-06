@@ -1,14 +1,39 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { parseSpec } from '../src/spec.js'
 
-const specMarkdown = readFileSync(join(process.cwd(), 'req_spec.md'), 'utf8')
+// Resolved from this file, not from process.cwd(). Running vitest from a
+// subdirectory made the cwd form fail with ENOENT — verified, not assumed.
+const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const specMarkdown = readFileSync(join(repositoryRoot, 'req_spec.md'), 'utf8')
+
+/**
+ * The SRS is frozen (plan.md D14), and until now nothing enforced that. Every
+ * coverage percentage this project reports is calibrated against these counts,
+ * so an accidental edit to req_spec.md would quietly change what "5 of 216"
+ * means. Asserting the exact baseline turns a stated decision into a checked
+ * one; changing the spec deliberately now requires changing this line, which is
+ * the right amount of friction.
+ */
+const BASELINE = { total: 216, MVP: 140, V2: 62, V3: 14 } as const
 
 describe('parseSpec', () => {
-  it('extracts requirements from the frozen SRS', () => {
-    const requirements = parseSpec(specMarkdown)
-    expect(requirements.length).toBeGreaterThan(150)
+  it('extracts exactly the frozen baseline of requirements', () => {
+    expect(parseSpec(specMarkdown)).toHaveLength(BASELINE.total)
+  })
+
+  it.each(['MVP', 'V2', 'V3'] as const)(
+    'extracts exactly %s requirements per the baseline',
+    (phase) => {
+      const count = parseSpec(specMarkdown).filter((r) => r.phase === phase).length
+      expect(count).toBe(BASELINE[phase])
+    },
+  )
+
+  it('accounts for every requirement in a delivery phase', () => {
+    expect(BASELINE.MVP + BASELINE.V2 + BASELINE.V3).toBe(BASELINE.total)
   })
 
   it('assigns every requirement a known phase', () => {
