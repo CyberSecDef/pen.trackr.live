@@ -60,8 +60,19 @@ export const payloadSchema = z.record(z.string(), z.unknown()).superRefine((valu
   }
 }) as unknown as z.ZodType<Record<string, CborValue>>
 
-/** The envelope as it exists before its own hash has been computed. */
-export const unhashedEnvelopeSchema = z.object({
+/**
+ * The envelope as it exists before its own hash has been computed.
+ *
+ * Strict: an unrecognized field is an error, not something to drop quietly.
+ * Stripping is the worse failure here. An older build reading an envelope
+ * written by a newer one would silently discard the new field, recompute a hash
+ * over what remained, and report a hash mismatch — telling the operator their
+ * ledger had been tampered with when it had only been written by a later
+ * version. For a tool whose output may be produced in a dispute, a false
+ * accusation of tampering is the worst error message available; "unknown
+ * envelope field" is the honest one.
+ */
+export const unhashedEnvelopeSchema = z.strictObject({
   event_id: uuidV7Schema,
   prev_hash: hashSchema.nullable(),
   ts_utc: z.string().regex(ISO_UTC, 'expected ISO-8601 UTC with milliseconds'),

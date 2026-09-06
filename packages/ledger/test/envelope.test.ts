@@ -99,12 +99,15 @@ describe('envelope rejection', () => {
     expect(envelopeSchema.safeParse({ ...valid(), type: 'command.teleported' }).success).toBe(false)
   })
 
-  it('rejects an unknown envelope field, so history cannot gain silent extras', () => {
-    // A field the hash does not cover would be invisible to verification.
-    const extra = { ...valid(), sneaky: true }
-    const result = envelopeSchema.safeParse(extra)
-    expect(result.success).toBe(true) // zod strips by default
-    if (result.success) expect('sneaky' in result.data).toBe(false)
+  it('rejects an unknown envelope field rather than stripping it', () => {
+    // Stripping would let an older build discard a field written by a newer
+    // one, recompute a mismatching hash, and report tampering that did not
+    // happen. Failing on the unknown field says what is actually wrong.
+    const result = envelopeSchema.safeParse({ ...valid(), sneaky: true })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain('sneaky')
+    }
   })
 })
 
@@ -166,9 +169,8 @@ describe('unhashedEnvelopeSchema', () => {
     expect(unhashedEnvelopeSchema.safeParse(validUnhashed()).success).toBe(true)
   })
 
-  it('ignores this_hash if present, since it is not part of the preimage', () => {
-    const result = unhashedEnvelopeSchema.safeParse(valid())
-    expect(result.success).toBe(true)
-    if (result.success) expect('this_hash' in result.data).toBe(false)
+  it('rejects a sealed envelope, which carries a field it does not define', () => {
+    // Use unsealed() to strip the hash rather than relying on it being dropped.
+    expect(unhashedEnvelopeSchema.safeParse(valid()).success).toBe(false)
   })
 })
