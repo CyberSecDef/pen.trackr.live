@@ -19,17 +19,18 @@ jobs:
   check:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Enable corepack
         run: corepack enable
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -53,18 +54,19 @@ jobs:
   package:
     name: package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     needs: check
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Enable corepack
         run: corepack enable
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -88,7 +90,7 @@ jobs:
         shell: bash
         run: node dist-bundle/pentrackr/bin/pentrackr.js --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pentrackr-${{ matrix.os }}
           path: dist-bundle/*.tar.gz

@@ -1,0 +1,29 @@
+# Actions are pinned to commit SHAs (supply-chain hardening), which means they
+# do not update on their own. Pinning without an update path is how a repository
+# ends up running a two-year-old action with known problems, so the two go
+# together: SHAs for determinism, Dependabot to move them deliberately.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    # Grouped so a routine bump is one pull request rather than a dozen. Security
+    # advisories still open their own, which is the signal worth interrupting for.
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production

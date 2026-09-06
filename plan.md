@@ -494,6 +494,7 @@ Per the SRS's own instruction, so no breaking migration is needed later: wireles
 | D19 | Local installs | **Permitted on the development host, but notify and pause for approval first.** Applies to system packages and to project dependencies that build native code. | 5 Sep 2026 (M1) |
 | D20 | Testing posture | **Test liberally** — every exported function gets direct unit tests; property-based tests for invariants; coverage measured per milestone as a diagnostic, not a target (§8). | 5 Sep 2026 (M1) |
 | D22 | SQLite engine | **`node:sqlite`**, not `better-sqlite3`. Native compilation broke Windows CI at M1; ADR 0013 records the trade-off, including that the built-in API is experimental in Node 22. | 5 Sep 2026 (M1) |
+| D24 | Branch protection | **`master` requires a pull request and all nine checks; administrators may bypass deliberately.** Work happens on branches. Without this the gates were advisory — seven pull requests were merged with nothing requiring them to be green. | 6 Sep 2026 |
 | D23 | Windows test host | **`baldr`** — Windows 11 Pro 26200 on the maintainer's local network, Node 22.23.2 matching CI, reachable over SSH. Standing approval to install what testing needs. Connection details are deliberately not recorded here (see `docs/testing.md`). | 5 Sep 2026 (M1) |
 | D21 | Signing key input | **Read from `PENTRACKR_SIGNING_KEY`, never from argv.** A key passed as an argument lands in shell history, `ps` output, and eventually this tool's own command ledger — the one it exists to protect. | 5 Sep 2026 (M1) |
 
