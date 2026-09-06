@@ -25,9 +25,12 @@ export interface Rule {
 export const RULES: readonly Rule[] = [
   {
     name: 'ssh-target',
-    // The account@host may sit anywhere on the line, not just straight after the
-    // command: `scp local.js admin@box:C:/dst` puts a source path in between.
-    // Bounded so the match cannot wander across an entire long line.
+    // The account and host may sit anywhere on the line, not just straight after
+    // the command — an scp invocation puts a source path in between. Bounded so
+    // the match cannot wander across an entire long line.
+    //
+    // Described rather than written with a literal example: this file is scanned
+    // like any other, and an illustration is not worth an exemption.
     pattern: /\b(?:ssh|scp|rsync)\b.{0,120}?\b[A-Za-z0-9._-]+@[A-Za-z0-9._-]+/,
     why: 'names an account and host together; keep connection details out-of-band',
   },
@@ -60,7 +63,22 @@ export const RULES: readonly Rule[] = [
  * itself, rather than by disabling the job. A reviewer sees the marker in the
  * diff and can ask why.
  */
-export const ALLOW_MARKER = 'pentrackr-allow-infra'
+/**
+ * Assembled from a prefix rather than written out whole, deliberately.
+ *
+ * The file-level check asks whether a file contains the file marker, so any file
+ * containing it verbatim is skipped entirely — including the file that defines
+ * it. Spelling the file marker out here would silently exempt this module from
+ * the scanner it implements, which is exactly what happened: two findings sat in
+ * this file, invisible, until the exemption was noticed.
+ *
+ * Splitting the value means the marker never appears contiguously in the source
+ * that defines it. Note that the first draft of this very comment reintroduced
+ * the bug by quoting the marker while explaining not to quote it.
+ */
+const MARKER_PREFIX = 'pentrackr-allow-infra'
+
+export const ALLOW_MARKER = MARKER_PREFIX
 
 /**
  * File-level escape hatch, for a file that *discusses* these patterns rather
@@ -72,4 +90,4 @@ export const ALLOW_MARKER = 'pentrackr-allow-infra'
  * flagged the gate's own tests. A tool that recognizes a pattern will always
  * contain that pattern somewhere.
  */
-export const ALLOW_FILE_MARKER = 'pentrackr-allow-infra-file'
+export const ALLOW_FILE_MARKER = `${MARKER_PREFIX}-file`
