@@ -58,6 +58,23 @@ modelling the practice it would recommend.
 Dependabot moves the pins weekly. Pinning without an update path is how a
 repository ends up running a two-year-old action.
 
+**Minor and patch updates are grouped; majors are left ungrouped, one pull
+request per dependency.** The first configuration grouped everything, and the
+first batch it produced was four simultaneous major bumps as a single
+accept-or-reject pull request. That batch was coherent — all four were the Node
+20 runtime deprecation — but the shape was luck. Four unrelated breaking changes
+would have arrived identically, with the only choices being all or nothing.
+
+Ungrouped is not the same as sequential: several major pull requests can be open
+at once. What changed is that each can now be taken or refused on its own merits,
+not that they arrive one after another.
+
+When a major bump does arrive, green CI is necessary but not sufficient. Check
+that the action still *does* its work: an action that passes because it silently
+stopped doing anything is worse than one that fails. For the v2-to-v3
+gitleaks-action bump that meant confirming the log still reported commits
+scanned and a version, not just a green tick.
+
 ## Job timeouts
 
 Every job has `timeout-minutes: 20`. The default is 360, so a hung test would
