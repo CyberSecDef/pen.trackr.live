@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+*.vsix
+
+# Test + coverage
+coverage/
+.nyc_output/
+
+# Test corpora — NEVER commit. Loaded from a local path at test time.
+# Contains real lab credentials and flags (see plan.md §12).
+tests/corpora/
+fixtures/local/
+
+# Engagement data — never belongs in this repo
+*.pentrackr/
+ledger.db
+ledger.db-wal
+ledger.db-shm
+blobs/
+vault/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!docs/**/*.key.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
