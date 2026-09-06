@@ -195,3 +195,56 @@ describe('round-trip with the encoder', () => {
     expect(() => decode(mutated)).toThrow(CborDecodeError)
   })
 })
+
+/**
+ * Regression anchors for a bug found by a property test on a Windows machine,
+ * after 20,000 runs on Linux had not sampled it. Property tests find these;
+ * explicit examples keep them found.
+ */
+describe('dangerous key names round-trip as ordinary data', () => {
+  const withKey = (key: string, value: unknown) => Object.fromEntries([[key, value]])
+
+  it('preserves a __proto__ key as an own property', () => {
+    const decoded = decode(encode(withKey('__proto__', { isAdmin: 1 }) as never)) as Record<
+      string,
+      unknown
+    >
+    expect(Object.prototype.hasOwnProperty.call(decoded, '__proto__')).toBe(true)
+    expect(Object.keys(decoded)).toEqual(['__proto__'])
+  })
+
+  it('does not alter the decoded object prototype', () => {
+    // Assignment would set the prototype instead of storing the key, silently
+    // dropping data and leaving a mutated object behind.
+    const decoded = decode(encode(withKey('__proto__', { isAdmin: 1 }) as never))
+    expect(Object.getPrototypeOf(decoded)).toBe(Object.prototype)
+  })
+
+  it('does not pollute Object.prototype', () => {
+    decode(encode(withKey('__proto__', withKey('polluted', 1)) as never))
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+  })
+
+  it('stays byte-idempotent for a __proto__ key', () => {
+    // The exact assertion that failed: the decoded value re-encoded to 'a0'
+    // because the key had vanished.
+    const bytes = encode(withKey('__proto__', {}) as never)
+    expect(encodeHex(decode(bytes) as never)).toBe(Buffer.from(bytes).toString('hex'))
+  })
+
+  it.each(['constructor', 'prototype', 'toString', '__defineGetter__'])(
+    'preserves the %s key',
+    (key) => {
+      const decoded = decode(encode(withKey(key, 1) as never)) as Record<string, unknown>
+      expect(Object.keys(decoded)).toEqual([key])
+      expect(decoded[key]).toBe(1)
+    },
+  )
+
+  it('preserves a __proto__ key nested inside other data', () => {
+    // The realistic case: Pen Trackr storing evidence of a prototype-pollution
+    // finding, whose captured request body literally contains this key.
+    const payload = { request_body: withKey('__proto__', { isAdmin: 1 }) }
+    expect(decode(encode(payload as never))).toEqual(payload)
+  })
+})

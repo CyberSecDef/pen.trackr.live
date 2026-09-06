@@ -183,7 +183,20 @@ function readMap(reader: ByteReader, size: bigint): CborValue {
     }
     previousKey = keyBytes
 
-    result[key] = readValue(reader)
+    // defineProperty, not assignment. `result['__proto__'] = x` invokes the
+    // inherited setter: it changes the object's prototype and stores nothing,
+    // so the key vanishes and the round trip silently loses data. For this
+    // ledger that is worse than cosmetic — a stored event whose payload
+    // contains a `__proto__` key would fail its own hash verification on read,
+    // and the tool would report a genuine event as tampered. Pen Trackr will
+    // routinely hold exactly such payloads: evidence of a prototype-pollution
+    // finding is a JSON body containing `__proto__`.
+    Object.defineProperty(result, key, {
+      value: readValue(reader),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    })
   }
 
   return result

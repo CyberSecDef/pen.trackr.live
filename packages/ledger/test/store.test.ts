@@ -125,6 +125,16 @@ describe('LedgerStore', () => {
       expect(stored?.envelope.payload.bytes_read).toBe(2n ** 60n)
     })
 
+    it('survives a payload containing a __proto__ key', () => {
+      // Realistic for this product: evidence of a prototype-pollution finding
+      // is a captured body containing exactly this key. Losing it on read would
+      // make the ledger report a genuine event as tampered.
+      const payload = { request_body: Object.fromEntries([['__proto__', { isAdmin: 1 }]]) }
+      store.append(event({ payload }))
+      expect(store.verify().ok).toBe(true)
+      expect(store.read()[0]?.envelope.payload).toEqual(payload)
+    })
+
     it('preserves an empty payload', () => {
       store.append(event({ payload: {} }))
       expect(store.read()[0]?.envelope.payload).toEqual({})
