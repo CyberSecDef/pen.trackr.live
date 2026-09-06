@@ -113,3 +113,45 @@ describe('checkpoint tamper detection', () => {
     }
   })
 })
+
+/**
+ * Regression tests for a key-import defect found by running on a newer Node.
+ *
+ * The private key was imported as a JWK OKP pair with 32 zero bytes standing in
+ * for the public half we do not hold — a key object asserting a public key that
+ * is not its own. Node 22 accepted it and Node 26 rejects it, which is the
+ * correct behaviour of the two. Nineteen tests failed there while all passed
+ * here, so this class of defect is invisible to a single-version test matrix.
+ */
+describe('private keys are imported without inventing a public half', () => {
+  it('derives the same public key an independent generation produces', () => {
+    // Passed even with the placeholder, because Node 22 ignored the bogus x.
+    // Kept because it is still the property that must hold.
+    const pair = generateSigningKeyPair()
+    expect(publicKeyOf(pair.privateKey)).toBe(pair.publicKey)
+  })
+
+  it('produces signatures that verify under the derived public key', () => {
+    const pair = generateSigningKeyPair()
+    const claim = {
+      event_count: 1,
+      head_hash: 'c'.repeat(64),
+      prev_checkpoint_signature: null,
+      ts_utc: '2026-09-06T00:00:00.000Z',
+      public_key: publicKeyOf(pair.privateKey),
+    }
+    expect(verifyCheckpointSignature(claim, signCheckpoint(claim, pair.privateKey))).toBe(true)
+  })
+
+  it('round-trips an arbitrary seed rather than only generated ones', () => {
+    // A seed we chose, not one Node produced, so the import path is exercised
+    // on material that never existed as a KeyObject.
+    const seed = 'ab'.repeat(32)
+    expect(publicKeyOf(seed)).toMatch(/^[0-9a-f]{64}$/)
+    expect(publicKeyOf(seed)).toBe(publicKeyOf(seed))
+  })
+
+  it('rejects a seed of the wrong length rather than padding it', () => {
+    expect(() => publicKeyOf('ab'.repeat(16))).toThrow(TypeError)
+  })
+})
