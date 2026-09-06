@@ -1,3 +1,4 @@
+export { CborDecodeError, decode, decodeHex } from './cbor-decode.js'
 export {
   CborEncodeError,
   collectEncodingIssues,
