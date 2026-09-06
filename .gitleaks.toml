@@ -1,0 +1,21 @@
+# Pen Trackr secret-scanning configuration.
+#
+# The repository is public and the project's test corpus contains genuine lab
+# credentials and flags, so the default rule set is deliberately not narrowed.
+# Allowlisting here is for documented false positives only — never to silence a
+# real secret that "is only a lab credential."
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pentrackr-lab-flag"
+description = "HTB-style proof-of-access flag committed to the repository"
+regex = '''(?i)\b[a-f0-9]{32}\b\s*(#|//)?\s*(user|root)\.txt'''
+tags = ["pentrackr", "flag"]
+
+[allowlist]
+description = "Documented false positives"
+paths = [
+  '''pnpm-lock\.yaml''',
+]

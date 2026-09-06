@@ -1,0 +1,94 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# NFR-008: Linux, Windows, and macOS are all first class. A feature is not done
+# until it is green on all three, or the gap is documented in release notes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint and format
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Traceability
+        run: pnpm run trace -- --check
+
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      # D9: distribution is a per-OS bundle, not a single portable binary.
+      # Proving that assembles and runs on every OS from M0 keeps packaging
+      # from becoming an end-of-project surprise.
+      - name: Assemble bundle
+        shell: bash
+        run: node scripts/package.mjs
+        env:
+          PENTRACKR_COMMIT: ${{ github.sha }}
+
+      - name: Smoke test the bundle
+        shell: bash
+        run: node dist-bundle/pentrackr/bin/pentrackr.js --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pentrackr-${{ matrix.os }}
+          path: dist-bundle/*.tar.gz
+          if-no-files-found: error
