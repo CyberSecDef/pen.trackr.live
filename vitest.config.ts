@@ -3,6 +3,13 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['packages/*/test/**/*.test.ts', 'tools/*/test/**/*.test.ts'],
+    // The ledger runs with synchronous = FULL, so every append is an fsync.
+    // On Windows runners that is roughly 20ms each, which pushes the
+    // long-chain tests past the 5s default. Raising the ceiling is right:
+    // weakening the durability setting to make tests fast would mean testing a
+    // configuration the product never runs in.
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts', 'tools/*/src/**/*.ts'],

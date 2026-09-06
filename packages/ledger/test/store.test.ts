@@ -50,7 +50,7 @@ describe('LedgerStore', () => {
     } catch {
       // already closed by a test
     }
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   })
 
   describe('appending', () => {

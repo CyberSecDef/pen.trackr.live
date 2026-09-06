@@ -107,7 +107,7 @@ describe('ledger commands', () => {
     } catch {
       // already closed
     }
-    rmSync(directory, { recursive: true, force: true })
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   })
 
   describe('verify', () => {
