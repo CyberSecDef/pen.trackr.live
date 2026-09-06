@@ -291,3 +291,81 @@ export const MAJOR_TYPES = {
   MAJOR_MAP,
   MAJOR_SIMPLE,
 } as const
+
+/** A reason a value cannot be encoded, with the path to the offending field. */
+export interface EncodingIssue {
+  readonly path: readonly (string | number)[]
+  readonly message: string
+}
+
+/**
+ * Reports every reason a value cannot be deterministically encoded, without
+ * throwing.
+ *
+ * The encoder is the single source of truth for what is encodable, so schema
+ * validation calls this rather than restating the rules. Two statements of the
+ * same rule would eventually disagree, and the one that mattered would be
+ * whichever ran at hash time.
+ */
+export function collectEncodingIssues(
+  value: unknown,
+  path: readonly (string | number)[] = [],
+): EncodingIssue[] {
+  const issue = (message: string): EncodingIssue[] => [{ path, message }]
+
+  if (value === null) return []
+
+  if (value === undefined) {
+    return issue('undefined is not encodable: absent fields must be explicit nulls (FR-CMD-002)')
+  }
+
+  switch (typeof value) {
+    case 'boolean':
+    case 'bigint':
+      return typeof value === 'bigint' && (value < -(2n ** 64n) || value > MAX_ARGUMENT)
+        ? issue('bigint is outside the encodable 64-bit range')
+        : []
+    case 'number':
+      if (!Number.isFinite(value)) return issue(`non-finite numbers are not encodable: ${value}`)
+      if (!Number.isInteger(value)) {
+        return issue(
+          'floating point is not deterministic enough for a hash preimage; use a string or an integer-scaled value',
+        )
+      }
+      if (!Number.isSafeInteger(value)) {
+        return issue('integer exceeds safe precision; pass a bigint to be explicit')
+      }
+      return []
+    case 'string':
+      return value.isWellFormed()
+        ? []
+        : issue('string contains unpaired surrogates and would not encode injectively')
+    case 'function':
+    case 'symbol':
+      return issue(`${typeof value} is not encodable`)
+    default:
+      break
+  }
+
+  if (value instanceof Uint8Array) return []
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectEncodingIssues(item, [...path, index]))
+  }
+
+  if (value instanceof Map) {
+    return [...value.entries()].flatMap(([key, item]) =>
+      typeof key === 'string'
+        ? collectEncodingIssues(item, [...path, key])
+        : [{ path, message: 'map keys must be strings' }],
+    )
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, item]) =>
+      collectEncodingIssues(item, [...path, key]),
+    )
+  }
+
+  return issue(`unsupported value type: ${typeof value}`)
+}

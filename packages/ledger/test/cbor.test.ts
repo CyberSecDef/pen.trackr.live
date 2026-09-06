@@ -1,6 +1,12 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { CborEncodeError, compareBytes, encode, encodeHex } from '../src/cbor.js'
+import {
+  CborEncodeError,
+  collectEncodingIssues,
+  compareBytes,
+  encode,
+  encodeHex,
+} from '../src/cbor.js'
 
 /**
  * @req FR-SECPL-002
@@ -261,5 +267,79 @@ describe('encoding properties', () => {
     for (const [value, expectedLength] of boundaries) {
       expect(encode(value).length).toBe(expectedLength)
     }
+  })
+})
+
+describe('collectEncodingIssues', () => {
+  it('reports nothing for an encodable value', () => {
+    expect(collectEncodingIssues({ a: [1, 'x', null, true, 2n] })).toEqual([])
+  })
+
+  it('locates a float nested in objects and arrays', () => {
+    const issues = collectEncodingIssues({ outer: [{ inner: 1.5 }] })
+    expect(issues).toHaveLength(1)
+    expect(issues[0]?.path).toEqual(['outer', 0, 'inner'])
+    expect(issues[0]?.message).toMatch(/floating point/)
+  })
+
+  it('reports every problem rather than stopping at the first', () => {
+    const issues = collectEncodingIssues({ a: 1.5, b: '\uD800', c: undefined })
+    expect(issues.map((issue) => issue.path)).toEqual([['a'], ['b'], ['c']])
+  })
+
+  it.each([
+    [Number.NaN, /non-finite/],
+    [Number.POSITIVE_INFINITY, /non-finite/],
+    [Number.MAX_SAFE_INTEGER + 2, /safe precision/],
+  ])('flags the number %s', (value, pattern) => {
+    expect(collectEncodingIssues(value)[0]?.message).toMatch(pattern)
+  })
+
+  it('flags a bigint outside the 64-bit range', () => {
+    expect(collectEncodingIssues(2n ** 65n)[0]?.message).toMatch(/64-bit range/)
+  })
+
+  it('accepts a bigint at the boundary', () => {
+    expect(collectEncodingIssues(2n ** 64n - 1n)).toEqual([])
+  })
+
+  it.each([
+    [() => undefined, 'function'],
+    [Symbol('s'), 'symbol'],
+  ])('flags a %s value', (value, label) => {
+    expect(collectEncodingIssues(value)[0]?.message).toContain(label)
+  })
+
+  it('walks Map entries with their keys as the path', () => {
+    const issues = collectEncodingIssues(new Map([['k', 0.5]]))
+    expect(issues[0]?.path).toEqual(['k'])
+  })
+
+  it('flags a Map with a non-string key', () => {
+    expect(collectEncodingIssues(new Map([[1, 'v']]))[0]?.message).toMatch(/keys must be strings/)
+  })
+
+  it('treats a byte string as encodable', () => {
+    expect(collectEncodingIssues(Uint8Array.of(1, 2, 3))).toEqual([])
+  })
+
+  it('agrees with the encoder: anything it accepts, encode() also accepts', () => {
+    fc.assert(
+      fc.property(
+        fc.dictionary(
+          fc.string().filter((t) => t.isWellFormed()),
+          fc.oneof(
+            fc.integer(),
+            fc.string().filter((t) => t.isWellFormed()),
+            fc.constant(null),
+          ),
+          { maxKeys: 6 },
+        ),
+        (record) => {
+          fc.pre(collectEncodingIssues(record).length === 0)
+          expect(() => encode(record)).not.toThrow()
+        },
+      ),
+    )
   })
 })
