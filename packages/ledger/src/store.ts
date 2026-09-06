@@ -206,20 +206,31 @@ export class LedgerStore {
 
   constructor(filename: string) {
     this.db = new DatabaseSync(filename)
-    // WAL for concurrent readers; FULL so a completed append survives a process
-    // death rather than sitting in an OS buffer (NFR-006).
-    this.db.exec('PRAGMA journal_mode = WAL')
-    this.db.exec('PRAGMA synchronous = FULL')
-    this.db.exec('PRAGMA foreign_keys = ON')
-    this.db.exec(SCHEMA)
 
-    const existing = this.meta('schema_version')
-    if (existing === null) {
-      this.setMeta('schema_version', String(SCHEMA_VERSION))
-    } else if (Number(existing) !== SCHEMA_VERSION) {
-      throw new LedgerStoreError(
-        `ledger schema version ${existing} is not supported by this build (expected ${SCHEMA_VERSION})`,
-      )
+    // Everything after the open must release the handle if it throws. Without
+    // this, a rejected ledger — wrong schema version, corrupt file — leaks an
+    // open connection that no one holds a reference to. On Windows that makes
+    // the file undeletable for the life of the process, which is how this was
+    // found: CI could not clean up its own temp directory.
+    try {
+      // WAL for concurrent readers; FULL so a completed append survives a
+      // process death rather than sitting in an OS buffer (NFR-006).
+      this.db.exec('PRAGMA journal_mode = WAL')
+      this.db.exec('PRAGMA synchronous = FULL')
+      this.db.exec('PRAGMA foreign_keys = ON')
+      this.db.exec(SCHEMA)
+
+      const existing = this.meta('schema_version')
+      if (existing === null) {
+        this.setMeta('schema_version', String(SCHEMA_VERSION))
+      } else if (Number(existing) !== SCHEMA_VERSION) {
+        throw new LedgerStoreError(
+          `ledger schema version ${existing} is not supported by this build (expected ${SCHEMA_VERSION})`,
+        )
+      }
+    } catch (error) {
+      this.db.close()
+      throw error
     }
   }
 

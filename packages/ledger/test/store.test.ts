@@ -268,6 +268,16 @@ describe('LedgerStore', () => {
       expect(() => openLedger(path)).toThrow(LedgerStoreError)
     })
 
+    it('releases the database handle when it refuses to open', () => {
+      // A rejected ledger must not leak an open connection. Deleting the file
+      // is the observable consequence: on Windows an open handle makes it
+      // undeletable, which is exactly how the leak was found.
+      store.setMeta('schema_version', '99')
+      store.close()
+      expect(() => openLedger(path)).toThrow()
+      expect(() => rmSync(path)).not.toThrow()
+    })
+
     it('round-trips arbitrary metadata', () => {
       store.setMeta('engagement_name', 'Cap')
       expect(store.meta('engagement_name')).toBe('Cap')
