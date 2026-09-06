@@ -23,9 +23,10 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "trace": "tsc --build tools/trace && node tools/trace/dist/cli.js",
-    "check": "pnpm run lint && pnpm run typecheck && pnpm run test:coverage && pnpm run trace && pnpm run hygiene",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test:coverage && pnpm run trace:check && pnpm run hygiene",
     "test:coverage": "vitest run --coverage",
-    "hygiene": "tsc --build tools/hygiene && node tools/hygiene/dist/cli.js"
+    "hygiene": "tsc --build tools/hygiene && node tools/hygiene/dist/cli.js",
+    "trace:check": "pnpm run trace -- --check"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

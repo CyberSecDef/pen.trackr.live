@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { isScannable } from './files.js'
 import { type Finding, formatFindings, scanText } from './scan.js'
 
 /**
@@ -10,30 +11,6 @@ import { type Finding, formatFindings, scanText } from './scan.js'
  * One implementation for both, because two would eventually disagree and the
  * one that mattered would be whichever did not run.
  */
-
-const SCANNED_EXTENSIONS = /\.(md|ts|tsx|mts|cts|js|mjs|cjs|json|ya?ml|sh|ps1)$/
-
-/**
- * Generated files, skipped regardless of extension.
- *
- * Same reasoning as the traceability scanner: a lockfile is a build artifact.
- * Here there is a second reason — a lockfile records dependency sources, and a
- * git-over-SSH dependency URL embeds an account and a host, which matches the
- * ssh-target rule exactly. No such entry exists today, but the first git
- * dependency anyone adds would produce a false positive, and a check that cries
- * wolf gets switched off.
- *
- * Writing that sentence with a literal example URL tripped the rule, which is a
- * fair demonstration that it fires. The example is described rather than
- * written: the allow marker is for content that genuinely must stay, and
- * spending it on an illustration would set a precedent worth avoiding.
- */
-const GENERATED_FILES = new Set(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'bun.lockb'])
-
-function isScannable(file: string): boolean {
-  const name = file.split(/[\\/]/).pop() ?? file
-  return !GENERATED_FILES.has(name) && SCANNED_EXTENSIONS.test(file)
-}
 
 function git(args: readonly string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })

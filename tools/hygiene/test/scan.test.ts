@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { isScannable } from '../src/files.js'
 import { ALLOW_FILE_MARKER, ALLOW_MARKER, RULES } from '../src/rules.js'
 import { formatFindings, scanText } from '../src/scan.js'
 
@@ -182,5 +183,98 @@ describe('the scanner does not exempt itself', () => {
     expect(scanText('rules.ts', 'command: `scp local.js admin@box:C:/dst`').length).toBeGreaterThan(
       0,
     )
+  })
+})
+
+/**
+ * The file-selection predicate decides what gets scanned at all, so a mistake
+ * here silently shrinks coverage rather than producing a visible failure. It had
+ * no tests until review pointed that out.
+ */
+describe('isScannable', () => {
+  it.each([
+    'a.md',
+    'a.ts',
+    'a.tsx',
+    'a.mts',
+    'a.cts',
+    'a.js',
+    'a.mjs',
+    'a.cjs',
+    'a.json',
+    'a.yml',
+    'a.yaml',
+    'a.sh',
+    'a.ps1',
+  ])('scans %s', (file) => {
+    expect(isScannable(file)).toBe(true)
+  })
+
+  it.each(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'bun.lockb'])(
+    'skips the generated file %s',
+    (file) => {
+      expect(isScannable(file)).toBe(false)
+    },
+  )
+
+  it('skips a lockfile nested in a subdirectory', () => {
+    expect(isScannable('packages/cli/pnpm-lock.yaml')).toBe(false)
+  })
+
+  it('skips a lockfile given a Windows-style path', () => {
+    expect(isScannable('packages\\cli\\pnpm-lock.yaml')).toBe(false)
+  })
+
+  it('still scans a hand-written yaml beside the lockfiles', () => {
+    expect(isScannable('.github/workflows/ci.yml')).toBe(true)
+  })
+
+  it.each(['a.png', 'a.txt', 'a.lock', 'Makefile', 'a.rs'])('ignores %s', (file) => {
+    expect(isScannable(file)).toBe(false)
+  })
+
+  it('does not skip a file merely because a lockfile name appears in its path', () => {
+    // The check is on the basename, not the whole path.
+    expect(isScannable('docs/pnpm-lock.yaml.md')).toBe(true)
+  })
+})
+
+/**
+ * Both scanners maintain their own generated-file list. Review flagged that two
+ * independent lists invite drift — a new lockfile type excluded from one tool and
+ * not the other. They stay separate, because a shared package for four strings
+ * would couple two otherwise independent tools, but this asserts they agree, so
+ * the drift the duplication risks fails a test rather than going unnoticed.
+ */
+describe('generated-file lists agree across the two scanners', () => {
+  it('hygiene and trace skip the same set of generated files', () => {
+    const traceSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../trace/src/annotations.ts'),
+      'utf8',
+    )
+    const hygieneSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/files.ts'),
+      'utf8',
+    )
+
+    const namesIn = (source: string) => {
+      const block = /GENERATED_FILES = new Set\(\[([^\]]*)\]/s.exec(source)?.[1] ?? ''
+      return [...block.matchAll(/'([^']+)'/g)].map((m) => m[1]).sort()
+    }
+
+    expect(namesIn(hygieneSource)).toEqual(namesIn(traceSource))
+    expect(namesIn(hygieneSource).length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * Regression for a trap this documentation walked into: the page describing the
+ * exemption marker contained it, and so exempted itself.
+ */
+describe('documentation does not exempt itself', () => {
+  it.each(['docs/testing.md', 'docs/pipeline.md'])('scans %s', (relative) => {
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+    const source = readFileSync(join(repoRoot, relative), 'utf8')
+    expect(source.includes(ALLOW_FILE_MARKER)).toBe(false)
   })
 })

@@ -170,8 +170,11 @@ describe('planBundle', () => {
 
 describe('the real workspace', () => {
   it('plans exactly the dependencies the shipped bundle contains', () => {
-    // Guards the actual repository, not a described one: if the CLI gains a
-    // dependency and packaging is not updated, this fails in check.
+    // Guards the actual repository, not a described one. Asserted as an exact
+    // set rather than a containment check, so that a dependency added to the CLI
+    // without a thought for packaging fails here rather than at release. The
+    // earlier version said "exactly" while only checking containment, which is
+    // the kind of test that reads stronger than it is.
     const fs = {
       root: process.cwd(),
       exists: (path: string) => existsSync(path),
@@ -181,7 +184,6 @@ describe('the real workspace', () => {
     const names = planBundle({ ...fs, entryDir: nodeJoin(process.cwd(), 'packages/cli') }).map(
       (e: { name: string }) => e.name,
     )
-    expect(names).toContain('@pentrackr/ledger')
-    expect(names).toContain('zod')
+    expect([...names].sort()).toEqual(['@pentrackr/ledger', 'zod'])
   })
 })
