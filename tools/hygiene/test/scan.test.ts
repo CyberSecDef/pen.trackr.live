@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { ALLOW_FILE_MARKER, ALLOW_MARKER, RULES } from '../src/rules.js'
 import { formatFindings, scanText } from '../src/scan.js'
@@ -132,5 +135,52 @@ describe('rule hygiene', () => {
   it('uses no global regexes, which carry lastIndex state between calls', () => {
     // A /g pattern reused across lines skips matches unpredictably.
     for (const rule of RULES) expect(rule.pattern.global).toBe(false)
+  })
+})
+
+/**
+ * Regression tests for a blind spot the scanner had in itself.
+ *
+ * The file-level exemption is a substring check, so the module defining the
+ * marker exempted itself simply by containing its own constant. Two findings sat
+ * in `rules.ts` unseen — and the first attempt to document the problem
+ * reintroduced it, by quoting the marker inside the comment explaining not to
+ * quote it.
+ */
+describe('the scanner does not exempt itself', () => {
+  const readSource = (relative: string) =>
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', relative), 'utf8')
+
+  it('keeps the file marker out of the module that defines it', () => {
+    // The property that matters. If this fails, rules.ts is invisible to the
+    // scanner and anything written there is unchecked.
+    expect(readSource('src/rules.ts').includes(ALLOW_FILE_MARKER)).toBe(false)
+  })
+
+  it.each(['src/rules.ts', 'src/scan.ts', 'src/cli.ts'])(
+    'scans %s rather than skipping it',
+    (file) => {
+      expect(readSource(file).includes(ALLOW_FILE_MARKER)).toBe(false)
+    },
+  )
+
+  it('finds nothing in its own sources', () => {
+    for (const file of ['src/rules.ts', 'src/scan.ts', 'src/cli.ts']) {
+      expect(scanText(file, readSource(file))).toEqual([])
+    }
+  })
+
+  it('still assembles the documented marker values', () => {
+    // Splitting the constant must not change what it means to a reader who
+    // types the marker into a file by hand.
+    expect(ALLOW_MARKER).toBe('pentrackr-allow-infra')
+    expect(ALLOW_FILE_MARKER).toBe('pentrackr-allow-infra-file')
+  })
+
+  it('would flag the example that was hiding in rules.ts', () => {
+    // Proof the exemption was masking something real, not merely theoretical.
+    expect(scanText('rules.ts', 'command: `scp local.js admin@box:C:/dst`').length).toBeGreaterThan(
+      0,
+    )
   })
 })

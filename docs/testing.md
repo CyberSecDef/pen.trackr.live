@@ -80,7 +80,17 @@ lab addressing appears legitimately throughout this project, so the rules key on
 
 A line that genuinely needs to keep such a detail can append
 `pentrackr-allow-infra`, which puts the exception in the diff where a reviewer
-sees it rather than in a config file where nobody does.
+sees it rather than in a config file where nobody does. A file that discusses
+these patterns rather than containing real ones — the scanner's own fixtures —
+carries `pentrackr-allow-infra-file` instead.
+
+The file-level exemption is a substring check, which gave the scanner a blind
+spot in itself: the module defining the marker contained its own constant and so
+skipped itself entirely, hiding two real findings. The constant is now assembled
+from a prefix so it never appears whole in its own source, and a test asserts
+that. Worth knowing before adding an exemption of your own — a marker written
+anywhere in a file, including inside a comment about the marker, exempts the
+whole file.
 
 ## The unlink retries in test teardown
 
