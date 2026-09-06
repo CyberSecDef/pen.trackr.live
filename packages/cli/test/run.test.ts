@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -292,24 +292,51 @@ describe('ledger commands', () => {
  */
 describe('an option present without a value is a usage error', () => {
   const deps = { openLedger, env: {} }
+  let scratch: string
+  let ledger: string
+
+  beforeEach(() => {
+    scratch = mkdtempSync(join(tmpdir(), 'pentrackr-usage-'))
+    ledger = join(scratch, 'x.db')
+  })
+
+  afterEach(() => {
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  })
 
   it.each([
-    ['verify', ['verify', 'x.db', '--public-key']],
-    ['log --limit', ['log', 'x.db', '--limit']],
-    ['log --type', ['log', 'x.db', '--type']],
-  ])('rejects %s with no value', (_label, argv) => {
-    const result = run(argv, deps)
+    ['verify', (p: string) => ['verify', p, '--public-key']],
+    ['log --limit', (p: string) => ['log', p, '--limit']],
+    ['log --type', (p: string) => ['log', p, '--type']],
+  ])('rejects %s with no value', (_label, build) => {
+    const result = run(build(ledger), deps)
     expect(result.exitCode).toBe(64)
     expect(result.stdout).toContain('requires a value')
   })
 
   it('rejects a flag followed by another flag', () => {
-    const result = run(['log', 'x.db', '--type', '--limit', '5'], deps)
+    const result = run(['log', ledger, '--type', '--limit', '5'], deps)
     expect(result.exitCode).toBe(64)
     expect(result.stdout).toContain('--limit')
   })
 
   it('names the offending option', () => {
-    expect(run(['verify', 'x.db', '--public-key'], deps).stdout).toContain('--public-key')
+    expect(run(['verify', ledger, '--public-key'], deps).stdout).toContain('--public-key')
+  })
+
+  it.each([
+    ['verify', (p: string) => ['verify', p, '--public-key']],
+    ['log', (p: string) => ['log', p, '--limit']],
+  ])('does not create a ledger file when %s is malformed', (_label, build) => {
+    // Opening a ledger creates it. Validating options afterwards meant a
+    // mistyped command left an empty database behind — which is also how a
+    // stray x.db reached a commit in this repository.
+    run(build(ledger), deps)
+    expect(existsSync(ledger)).toBe(false)
+  })
+
+  it('does not create a ledger file for an invalid --limit', () => {
+    expect(run(['log', ledger, '--limit', '0'], deps).exitCode).toBe(64)
+    expect(existsSync(ledger)).toBe(false)
   })
 })

@@ -101,6 +101,11 @@ function withLedger(
 }
 
 function verify(deps: RunDeps, argv: readonly string[]): RunResult {
+  // Read options first. withLedger opens the ledger, and opening creates it, so
+  // validating afterwards means a mistyped command leaves an empty database
+  // behind before reporting the mistake.
+  const expectedKey = option(argv, 'public-key')
+
   return withLedger(deps, argv[0], (store) => {
     const lines: string[] = []
     const chain = store.verify()
@@ -115,7 +120,6 @@ function verify(deps: RunDeps, argv: readonly string[]): RunResult {
 
     lines.push(`chain ok: ${chain.length} events, head ${chain.head ?? '(empty)'}`)
 
-    const expectedKey = option(argv, 'public-key')
     const checkpoints = store.verifyCheckpoints(expectedKey)
 
     if (!checkpoints.ok) {
@@ -171,15 +175,14 @@ function seal(deps: RunDeps, argv: readonly string[]): RunResult {
 }
 
 function log(deps: RunDeps, argv: readonly string[]): RunResult {
+  const limit = Number(option(argv, 'limit') ?? '50')
+  if (!Number.isInteger(limit) || limit < 1) {
+    return usageError('--limit must be a positive integer')
+  }
+  const type = option(argv, 'type')
+
   return withLedger(deps, argv[0], (store) => {
     new ProjectionRunner(store, [timelineProjection]).catchUp()
-
-    const limit = Number(option(argv, 'limit') ?? '50')
-    if (!Number.isInteger(limit) || limit < 1) {
-      return usageError('--limit must be a positive integer')
-    }
-
-    const type = option(argv, 'type')
     const rows = store
       .projectionDatabase()
       .prepare(
