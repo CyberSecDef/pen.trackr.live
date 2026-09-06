@@ -1,7 +1,19 @@
 # Actions are pinned to commit SHAs (supply-chain hardening), which means they
 # do not update on their own. Pinning without an update path is how a repository
-# ends up running a two-year-old action with known problems, so the two go
-# together: SHAs for determinism, Dependabot to move them deliberately.
+# ends up running a two-year-old action, so the two go together: SHAs for
+# determinism, Dependabot to move them deliberately.
+#
+# Grouping is split by update type on purpose. An earlier version grouped
+# everything with patterns: ["*"], and the first batch it produced was four
+# simultaneous major bumps — checkout v4 to v7, setup-node v4 to v7,
+# upload-artifact v4 to v7, gitleaks-action v2 to v3 — as a single
+# accept-or-reject pull request. That batch happened to be one coherent change
+# (the Node 20 runtime deprecation), but the shape was luck rather than design:
+# four unrelated breaking changes would have arrived the same way, and the only
+# options would have been to take all of them or none.
+#
+# So minor and patch updates group into one quiet pull request, and each major
+# arrives on its own, where its release notes can be read against one diff.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -13,6 +25,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: npm
     directory: /
@@ -20,10 +33,12 @@ updates:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
-    # Grouped so a routine bump is one pull request rather than a dozen. Security
-    # advisories still open their own, which is the signal worth interrupting for.
     groups:
+      # Security advisories still open their own pull request regardless of
+      # grouping, which is the signal worth interrupting for.
       dev-dependencies:
         dependency-type: development
+        update-types: ["minor", "patch"]
       production-dependencies:
         dependency-type: production
+        update-types: ["minor", "patch"]
