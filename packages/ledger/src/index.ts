@@ -50,6 +50,19 @@ export {
   LedgerStoreError,
   SCHEMA_VERSION,
   openLedger,
+  type CheckpointFailure,
+  type CheckpointVerdict,
   type ReadOptions,
+  type StoredCheckpoint,
   type StoredEvent,
 } from './store.js'
+export {
+  CHECKPOINT_DOMAIN,
+  checkpointPreimage,
+  generateSigningKeyPair,
+  publicKeyOf,
+  signCheckpoint,
+  verifyCheckpointSignature,
+  type CheckpointClaim,
+  type SigningKeyPair,
+} from './signing.js'
