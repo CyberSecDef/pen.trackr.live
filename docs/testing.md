@@ -82,15 +82,20 @@ A line that genuinely needs to keep such a detail can append
 `pentrackr-allow-infra`, which puts the exception in the diff where a reviewer
 sees it rather than in a config file where nobody does. A file that discusses
 these patterns rather than containing real ones — the scanner's own fixtures —
-carries `pentrackr-allow-infra-file` instead.
+carries the file-level marker instead: the same string with `-file` appended.
 
 The file-level exemption is a substring check, which gave the scanner a blind
 spot in itself: the module defining the marker contained its own constant and so
 skipped itself entirely, hiding two real findings. The constant is now assembled
 from a prefix so it never appears whole in its own source, and a test asserts
-that. Worth knowing before adding an exemption of your own — a marker written
-anywhere in a file, including inside a comment about the marker, exempts the
-whole file.
+that.
+
+**This page was then caught by the same trap.** Documenting the marker by writing
+it out exempted `docs/testing.md` from scanning — so the one file most likely to
+discuss infrastructure was the one file where infrastructure details could hide.
+It is now described rather than spelled, and a test covers it. Worth knowing
+before adding an exemption of your own: the marker written anywhere in a file,
+including inside a sentence about the marker, exempts the whole file.
 
 ## The unlink retries in test teardown
 

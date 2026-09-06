@@ -33,8 +33,9 @@ now rather than at the moment it is blocking you:
 
 1. **Prefer upgrading.** Most advisories have a fix within days; check whether a
    transitive pin resolves it before doing anything else.
-2. **If there is genuinely no fix**, add a dated, reasoned entry to
-   `.pnpm-audit-ignore` and reference it from the audit step, with the advisory
+2. **If there is genuinely no fix**, add the advisory to
+   `pnpm.auditConfig.ignoreGhsas` in `package.json` — pnpm's own mechanism, so no
+   wiring is needed in the workflow — with a comment above it giving the advisory
    ID, why it does not apply here, and the date to re-check. An exception with an
    expiry is a decision; an exception without one is a leak.
 3. **Do not weaken `--audit-level`.** Lowering the threshold to clear one

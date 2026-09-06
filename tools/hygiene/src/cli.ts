@@ -30,7 +30,7 @@ const SCANNED_EXTENSIONS = /\.(md|ts|tsx|mts|cts|js|mjs|cjs|json|ya?ml|sh|ps1)$/
  */
 const GENERATED_FILES = new Set(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'bun.lockb'])
 
-function isScannable(file: string): boolean {
+export function isScannable(file: string): boolean {
   const name = file.split(/[\\/]/).pop() ?? file
   return !GENERATED_FILES.has(name) && SCANNED_EXTENSIONS.test(file)
 }
