@@ -2,7 +2,11 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['packages/*/test/**/*.test.ts', 'tools/*/test/**/*.test.ts'],
+    include: [
+      'packages/*/test/**/*.test.ts',
+      'tools/*/test/**/*.test.ts',
+      'scripts/test/**/*.test.ts',
+    ],
     // The ledger runs with synchronous = FULL, so every append is an fsync.
     // On Windows runners that is roughly 20ms each, which pushes the
     // long-chain tests past the 5s default. Raising the ceiling is right:

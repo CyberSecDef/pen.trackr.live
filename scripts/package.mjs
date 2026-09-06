@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { planBundle } from './lib/bundle-plan.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const outputRoot = join(root, 'dist-bundle')
@@ -35,49 +36,26 @@ function resolveCommit() {
   }
 }
 
-const copied = new Set()
-
 /**
- * Copies a dependency into the bundle, then its own dependencies.
+ * Materializes a bundle plan.
  *
- * Workspace packages are taken from packages/<name>; everything else is copied
- * out of node_modules with symlinks dereferenced, because pnpm's store is a
- * tree of links that would not survive being archived.
+ * What to include is decided by planBundle, which is unit-tested; this only
+ * copies. Splitting them means a bundle missing a dependency fails in `check`
+ * rather than waiting for `package` to be reachable.
  */
-function bundleDependency(name, version, fromDir) {
-  if (copied.has(name)) return
-  copied.add(name)
+function copyEntry(entry) {
+  const target = join(stageModules, entry.name)
 
-  const target = join(stageModules, name)
-
-  if (typeof version === 'string' && version.startsWith('workspace:')) {
-    const local = join(root, 'packages', name.replace(/^@pentrackr\//, ''))
-    const manifest = readManifest(join(local, 'package.json'))
+  if (entry.kind === 'workspace') {
     mkdirSync(target, { recursive: true })
-    cpSync(join(local, 'dist'), join(target, 'dist'), { recursive: true })
-    cpSync(join(local, 'package.json'), join(target, 'package.json'))
-    for (const [child, range] of Object.entries(manifest.dependencies ?? {})) {
-      bundleDependency(child, range, local)
-    }
+    cpSync(join(entry.from, 'dist'), join(target, 'dist'), { recursive: true })
+    cpSync(join(entry.from, 'package.json'), join(target, 'package.json'))
     return
-  }
-
-  // pnpm installs a dependency under the package that declares it, so resolve
-  // from there first and fall back to the workspace root.
-  const candidates = [join(fromDir, 'node_modules', name), join(root, 'node_modules', name)]
-  const source = candidates.find((candidate) => existsSync(candidate))
-  if (source === undefined) {
-    throw new Error(`cannot bundle ${name}: not found in ${candidates.join(' or ')}`)
   }
 
   // dereference: pnpm's node_modules is a tree of symlinks into a content store,
   // and links do not survive being archived and unpacked elsewhere.
-  cpSync(source, target, { recursive: true, dereference: true })
-  for (const [child, range] of Object.entries(
-    readManifest(join(source, 'package.json')).dependencies ?? {},
-  )) {
-    bundleDependency(child, range, source)
-  }
+  cpSync(entry.from, target, { recursive: true, dereference: true })
 }
 
 const cliManifest = readManifest(join(root, 'packages/cli/package.json'))
@@ -90,9 +68,14 @@ mkdirSync(join(stageRoot, 'bin'), { recursive: true })
 // bundle layout must keep lib/ directly beneath the package root.
 cpSync(join(root, 'packages/cli/dist'), join(stageRoot, 'lib'), { recursive: true })
 
-for (const [name, range] of Object.entries(cliManifest.dependencies ?? {})) {
-  bundleDependency(name, range, join(root, 'packages/cli'))
-}
+const plan = planBundle({
+  root,
+  entryDir: join(root, 'packages/cli'),
+  exists: existsSync,
+  readManifest,
+  join,
+})
+for (const entry of plan) copyEntry(entry)
 
 for (const file of ['LICENSE', 'NOTICE', 'README.md']) {
   cpSync(join(root, file), join(stageRoot, file))
@@ -127,5 +110,5 @@ const archiveName = `pentrackr-${cliManifest.version}-${process.platform}-${proc
 execFileSync('tar', ['-czf', archiveName, 'pentrackr'], { cwd: outputRoot, stdio: 'inherit' })
 
 process.stdout.write(
-  `packaged ${archiveName}\n  commit ${commit ?? 'working tree'}\n  bundled ${[...copied].join(', ') || '(no dependencies)'}\n`,
+  `packaged ${archiveName}\n  commit ${commit ?? 'working tree'}\n  bundled ${plan.map((e) => e.name).join(', ') || '(no dependencies)'}\n`,
 )

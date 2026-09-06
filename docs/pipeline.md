@@ -104,3 +104,30 @@ Splitting the slowest file helps less than it appears: the next file is already
 24.6 seconds, so the wall clock would only fall to about 25. If the threshold is
 ever crossed, the honest levers are reducing the number of appends in tests that
 are not about durability, or accepting a longer Windows job.
+
+## Why `package` depends on `check`, and what that hid
+
+The packaging jobs declare `needs: check`, so a red `check` skips them entirely.
+That is the right resource trade — a build error would fail both jobs and print
+the same error twice — but it has a cost that was paid once already.
+
+At M1 the CLI gained a workspace dependency and the bundle did not learn to
+carry it. `check` was red for three consecutive runs on unrelated Windows
+problems, so `package` was skipped each time, and the broken bundle surfaced
+only when `check` finally went green: `ERR_MODULE_NOT_FOUND` on all three
+operating systems at once. Packaging correctness was verifiable only by running
+packaging.
+
+Two things address that, and neither is restructuring the workflow:
+
+- **Branch protection requires all three `package` contexts.** A skipped job
+  never reports its context, so the pull request cannot merge — the masking is
+  bounded to red branches and can never reach `master`.
+- **The decision of what to bundle is unit-tested** (`scripts/lib/bundle-plan.mjs`,
+  `scripts/test/`), separately from the copying. That class of defect now fails
+  in `check`, in milliseconds, whether or not `package` is reachable. The tests
+  were verified against the original defect: reintroducing it fails three of them.
+
+The general lesson is worth keeping: a job behind a `needs:` gate verifies
+nothing while the gate is closed, so anything it alone can catch wants a cheap
+equivalent upstream.
