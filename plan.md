@@ -422,6 +422,7 @@ Per the SRS's own instruction, so no breaking migration is needed later: wireles
 | Risk | Impact | Mitigation |
 |----|----|----|
 | Windows argv capture unreliable under ConPTY | Core value weakens on a first-class OS | PowerShell profile hooks (the VS Code technique, same runtime); `cmd.exe` documented `session-only`; fidelity stated, not assumed. Prototyped M4. **Escape hatch: Go `ptyhelper`.** |
+| `node-pty` reintroduces the M1 native-build failure at M4 | Windows CI breaks the way it did on `better-sqlite3` | **Measured, largely retired (ADR 0013).** On Windows with no C++ toolchain, node-pty installs from a shipped prebuild in seconds and spawns a working ConPTY. Its install script still falls back to `node-gyp`, so a future Node ABI without a prebuild would recur — `.nvmrc` pinning Node 22 keeps that under our control. |
 | **Scope exceeds cadence** | Daily driver never arrives; project stalls at 70% | §3 states the arithmetic openly; M6 is a shippable checkpoint; milestones end resumable-cold so three-week gaps cost nothing. |
 | Remote agent doubles the runner's surface | Δ2 eats the budget | Agent interface defined at M4 with an in-process implementation, so M13 adds transport, not redesign. Sequenced *after* the daily driver — FR-CMD-014 doesn't require it for MVP. |
 | Node packaging with native addons | Release friction, broken installs | `prebuildify` matrix in CI from M0; npm fallback; installer smoke-tested on three OSes every release. |
