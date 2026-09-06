@@ -2,8 +2,8 @@
 
 **An engagement operating system for authorized penetration testing.** Every command, manual action, screenshot, secret, finding, and target change becomes an event in one hash-chained ledger — scoped before execution, redactable by audience, and exportable as evidence.
 
-> **Status: pre-alpha. There is no implementation yet.**
-> This repository currently contains the requirements specification and the development plan. Code begins at M0. See [Roadmap](#roadmap) for what exists and what does not.
+> **Status: pre-alpha. The ledger spine works; nothing else does yet.**
+> Two of eighteen milestones are complete. There is no terminal capture, no scope engine, no evidence store, and no user interface. What exists is the tamper-evident foundation the rest is built on, plus a CLI to exercise it. See [What works today](#what-works-today) for the honest boundary, and [Roadmap](#roadmap) for the rest.
 
 ---
 
@@ -43,6 +43,49 @@ Authorization letters, SOWs, NDAs, and Rules of Engagement are first-class docum
 
 **You are responsible for having authorization for whatever you point it at.**
 
+## What works today
+
+Two milestones are done: **M0** (toolchain, three-OS CI, packaging, requirement traceability) and **M1** (the ledger spine).
+
+```console
+$ pentrackr keygen
+$ export PENTRACKR_SIGNING_KEY=<private key>
+$ pentrackr seal engagement/ledger.db
+sealed checkpoint 1
+  events    5
+  head      902bbd4b0bd8b8e17c4e0068d4a729c7ab1d8e05509a908127a5716179e59941
+
+$ pentrackr verify engagement/ledger.db --public-key <public key>
+chain ok: 5 events, head 902bbd4b0bd8b8e17c4e0068d4a729c7ab1d8e05509a908127a5716179e59941
+checkpoints ok: 1 signed
+```
+
+Delete two events from the middle of that ledger and the chain reports which one broke and where. Delete two from the *end* and the chain still verifies — that is what hash chains do — but the signed checkpoint does not:
+
+```console
+chain ok: 3 events, head 72ee86d5769f88b87cc1db5f56d9aa51c71d45b93fcb0d427341fcd85fc877e8
+checkpoints BROKEN at checkpoint 1
+  truncated: signature attests 5 events but only 3 are present
+```
+
+Under the hood: a deterministic CBOR encoder verified against RFC 8949 test vectors, SHA-256 hash chaining with a versioned domain tag, Ed25519 checkpoints, an append-only SQLite store where immutability is enforced by database triggers rather than application convention, and a projection framework that can drop any derived view and rebuild it from events alone.
+
+**Requirements closed so far:** `FR-SECPL-001`, `FR-SECPL-002`, `NFR-006`, `NFR-009`, `NFR-010` — 5 of 216. A requirement only counts as closed when both an implementation and a test are annotated with its ID, and CI fails on a claim that lacks either.
+
+**Not yet built:** everything else. No command runner, no scope enforcement, no vault, no findings, no reports, no clients.
+
+## Building and testing
+
+```console
+corepack enable pnpm
+pnpm install
+pnpm run check      # lint, typecheck, tests with coverage, traceability
+```
+
+Node 22 or newer. No C++ toolchain required on any platform — storage uses Node's built-in SQLite ([ADR 0013](docs/adr/0013-node-sqlite.md)).
+
+412 tests, verified on Linux, Windows, and macOS. See [docs/testing.md](docs/testing.md) for how each platform is covered, including which one is only covered by CI.
+
 ## Architecture
 
 Four planes, one local core service, several clients:
@@ -66,23 +109,29 @@ Remote work uses a thin agent on the attack host that dials out to the core; the
 
 Development is sequenced so the tool becomes usable long before it is complete.
 
-| Phase | Milestones | Delivers |
-|----|----|----|
-| Foundation | M0–M5 | Ledger spine, projects, blob store, command runner, scope engine |
-| **Checkpoint** | M6 | Web UI — a usable cockpit with terminals, ledger, and evidence capture |
-| **Daily driver** | M7–M9 | Vault and redaction, findings and cleanup, report generation |
-| Breadth | M10–M15 | TUI, parsers and asset inventory, tasks and checklists, remote agent, model adapters, case export |
-| Stretch | M16 | VS Code extension |
-| MVP | M17 | Full acceptance across three operating systems |
+| Phase | Milestones | Delivers | Status |
+|----|----|----|----|
+| Foundation | M0–M1 | Project rails, ledger spine | **done** |
+| Foundation | M2–M5 | Projects and core API, blob store, command runner, scope engine | next |
+| **Checkpoint** | M6 | Web UI — a usable cockpit with terminals, ledger, and evidence capture | |
+| **Daily driver** | M7–M9 | Vault and redaction, findings and cleanup, report generation | |
+| Breadth | M10–M15 | TUI, parsers and asset inventory, tasks and checklists, remote agent, model adapters, case export | |
+| Stretch | M16 | VS Code extension | |
+| MVP | M17 | Full acceptance across three operating systems | |
 
 Full detail, including per-milestone exit criteria and honest effort estimates, is in [`plan.md`](plan.md).
 
 ## Repository contents
 
-| File | What it is |
+| Path | What it is |
 |----|----|
 | [`req_spec.md`](req_spec.md) | Software Requirements Specification v0.2 — 31 sections, 216 numbered requirements. Frozen as the baseline. |
-| [`plan.md`](plan.md) | Development plan v0.3 — architecture decisions, milestones, testing strategy, risk register, and every deliberate divergence from the SRS. |
+| [`plan.md`](plan.md) | Development plan — architecture decisions, milestones with results, testing strategy, risk register, and every deliberate divergence from the SRS. |
+| [`docs/adr/`](docs/adr/) | Thirteen architecture decision records. Immutable once accepted: a decision that turns out wrong gets a superseding record rather than an edit, so the reasoning stays readable. |
+| [`docs/testing.md`](docs/testing.md) | How each platform is covered, and what CI is better at than a local machine. |
+| `packages/ledger` | Event envelope, CBOR codec, hash chain, checkpoints, store, projections. |
+| `packages/cli` | The `pentrackr` command. |
+| `tools/trace` | Turns `req_spec.md` into a coverage gate. |
 | `LICENSE` | Apache-2.0 |
 
 Requirements carry stable IDs (`FR-CMD-006`, `NFR-003`). Commits reference them, and CI will fail any milestone claiming an ID it has not annotated with both an implementation and a test.

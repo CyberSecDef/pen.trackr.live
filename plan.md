@@ -1,10 +1,31 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.5
+**Plan version:** 0.6
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** M0 and M1 complete. Executing M2. Decision log at §14; milestone progress tracked inline in §6.
+**Status:** M0 and M1 complete — see the snapshot below. M2 is next. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
+
+## 0. Where this stands
+
+*Updated 5 September 2026, after M1.*
+
+| | |
+|----|----|
+| Milestones complete | **M0** (rails), **M1** (ledger spine) — 2 of 18 |
+| Requirements closed | **5 of 216** — `FR-SECPL-001`, `FR-SECPL-002`, `NFR-006`, `NFR-009`, `NFR-010` |
+| Tests | **412**, 98.35% statements, 93.65% branches, 100% functions |
+| Platforms verified | Linux, Windows (CI + `baldr`), macOS (CI only) |
+| ADRs | 13, one superseding and one amending an earlier decision |
+| Next | **M2** — projects, engagement states, core API |
+
+**What a reader should take from that:** the tamper-evidence layer is real and tested, and nothing else exists yet. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine, and none of them produce anything visible. The first milestone that feels like a product is M6.
+
+**What was learned rather than built:**
+
+- A library's claim about itself is worth exactly one test (`cbor-x` was approved, evaluated, and rejected on evidence).
+- Three separate bugs were found by tests within minutes of writing the code they covered, and one more by running on a second machine. None would have been found by review.
+- Two measurements written into this plan as fact turned out to be wrong — a requirement count estimated rather than counted, and an append latency taken from a CI runner rather than hardware. Both are corrected in place with the reasoning visible.
 
 ## 1. How I intend to build this
 
@@ -251,6 +272,7 @@ Project rails: toolchain, CI, packaging, traceability, and the decision record.
 - **The truncation gap is closed, and stated.** A hash chain cannot detect tail truncation — every remaining link stays intact. ADR 0012 documents it, a test asserts that a truncated chain still verifies, and checkpoints (M1.6) close it. `verify` says so in its own output when no checkpoints exist rather than reporting an unqualified "ok".
 - **Three layers, kept distinct.** Triggers prevent accidents (a raw `sqlite3` shell is refused). The chain detects modification and reordering. Checkpoints detect deletion from the end. Conflating them is how a security tool ends up overstating what it proves, so each has its own tests, including one that drops the triggers and asserts the chain catches what gets through.
 - **`better-sqlite3` was replaced by `node:sqlite` (D22, ADR 0013)** after it broke Windows CI: no prebuild matched, so it compiled from source, and node-gyp 10 cannot detect Visual Studio 18. Requiring a C++ toolchain to install a laptop tool is a poor answer to NFR-008's "Windows is first class". All 395 tests passed after the migration with no changes to test logic.
+- **A bug survived M1 and was caught afterwards, by a different machine.** The decoder built maps with `result[key] = value`, which for the key `__proto__` invokes the inherited setter: the key vanished and the object's prototype was replaced. A stored event with such a payload would have failed its own hash verification on read — and that payload is not exotic here, since evidence of a prototype-pollution finding is a captured body containing exactly that key. The property test asserting byte-idempotence caught it on `baldr`'s first run; 20,000 runs on Linux never sampled it. Property tests are only as good as the seeds they draw, which is an argument for a second execution environment beyond platform coverage.
 - **Append latency, measured on three environments** with `synchronous = FULL` (every append is an fsync): **0.27 ms** on the Linux dev host, **2.0 ms** on real Windows hardware (`baldr`), and roughly **20 ms** on a GitHub Actions Windows runner. The CI figure was recorded first and is *not* representative — shared virtualized storage, not a laptop. Against NFR-003's 20 ms budget the real number leaves ample headroom, so appending off the runner's hot path at M4 remains good design rather than a necessity. Recorded here because the first version of this note asserted the CI figure as fact, which would have distorted an M4 decision.
 
 ### M2 — Projects, states, core API (M, ~40h)
