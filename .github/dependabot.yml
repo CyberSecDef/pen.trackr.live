@@ -12,8 +12,13 @@
 # four unrelated breaking changes would have arrived the same way, and the only
 # options would have been to take all of them or none.
 #
-# So minor and patch updates group into one quiet pull request, and each major
-# arrives on its own, where its release notes can be read against one diff.
+# So minor and patch updates group into one quiet pull request, and majors are
+# left ungrouped: one pull request per dependency, each carrying a single diff
+# its release notes can be read against.
+#
+# Ungrouped is not the same as sequential — several major pull requests can be
+# open at once. The point is that each can be taken or refused on its own merits,
+# not that they arrive one after another.
 version: 2
 updates:
   - package-ecosystem: github-actions
