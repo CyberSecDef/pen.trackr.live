@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { ALLOW_MARKER, RULES } from '../src/rules.js'
+import { ALLOW_FILE_MARKER, ALLOW_MARKER, RULES } from '../src/rules.js'
 import { formatFindings, scanText } from '../src/scan.js'
 
 /**
  * @req-ignore-file
+ * pentrackr-allow-infra-file
  *
  * Fixtures below contain the exact strings the scanner looks for, including the
- * ones that leaked from this repository. The marker keeps the traceability gate
- * out of it; the hygiene scanner skips this file by its own allow marker on each
- * fixture line where needed.
+ * ones that leaked from this repository. Two markers keep the two gates out of
+ * it — a tool that recognizes a pattern will always contain that pattern
+ * somewhere, and both gates learned this by flagging their own tests.
  */
 
 const scan = (text: string) => scanText('fixture.md', text)
@@ -79,6 +80,16 @@ describe("does not fire on this project's legitimate content", () => {
 })
 
 describe('escape hatch', () => {
+  it('skips a whole file carrying the file-level marker', () => {
+    const text = [`// ${ALLOW_FILE_MARKER}`, '192.168.0.16', 'ssh root@box'].join('\n')
+    expect(scan(text)).toEqual([])
+  })
+
+  it('honours the file marker wherever it appears in the file', () => {
+    const text = ['192.168.0.16', `trailing ${ALLOW_FILE_MARKER}`].join('\n')
+    expect(scan(text)).toEqual([])
+  })
+
   it('respects the allow marker on the same line', () => {
     expect(scan(`192.168.0.16 ${ALLOW_MARKER}`)).toEqual([])
   })

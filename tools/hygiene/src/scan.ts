@@ -1,4 +1,4 @@
-import { ALLOW_MARKER, RULES } from './rules.js'
+import { ALLOW_FILE_MARKER, ALLOW_MARKER, RULES } from './rules.js'
 
 export interface Finding {
   readonly file: string
@@ -10,6 +10,8 @@ export interface Finding {
 
 /** Scans one file's contents. Pure, so the rules can be tested without a repository. */
 export function scanText(file: string, contents: string): Finding[] {
+  if (contents.includes(ALLOW_FILE_MARKER)) return []
+
   const findings: Finding[] = []
 
   contents.split('\n').forEach((line, index) => {

@@ -61,3 +61,15 @@ export const RULES: readonly Rule[] = [
  * diff and can ask why.
  */
 export const ALLOW_MARKER = 'pentrackr-allow-infra'
+
+/**
+ * File-level escape hatch, for a file that *discusses* these patterns rather
+ * than containing real infrastructure — this scanner's own fixtures, most
+ * obviously.
+ *
+ * The traceability tool needed exactly the same hatch for exactly the same
+ * reason, and both were discovered the same way: the gate's first real run
+ * flagged the gate's own tests. A tool that recognizes a pattern will always
+ * contain that pattern somewhere.
+ */
+export const ALLOW_FILE_MARKER = 'pentrackr-allow-infra-file'

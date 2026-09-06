@@ -17,10 +17,19 @@ function git(args: readonly string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 }
 
-function trackedFiles(): string[] {
-  return git(['ls-files'])
-    .split('\n')
-    .filter((f) => f !== '' && SCANNED_EXTENSIONS.test(f))
+/**
+ * Tracked files plus untracked, non-ignored ones.
+ *
+ * Tracked-only under-reports in exactly the situation that matters: a new file
+ * scans clean before it is committed and fails in CI afterwards. That is how
+ * this tool's own first run went.
+ */
+function workingFiles(): string[] {
+  const tracked = git(['ls-files']).split('\n')
+  const untracked = git(['ls-files', '--others', '--exclude-standard']).split('\n')
+  return [...new Set([...tracked, ...untracked])].filter(
+    (f) => f !== '' && SCANNED_EXTENSIONS.test(f),
+  )
 }
 
 function stagedFiles(): string[] {
@@ -44,7 +53,7 @@ function stagedContents(file: string): string | null {
 }
 
 const staged = process.argv.includes('--staged')
-const files = staged ? stagedFiles() : trackedFiles()
+const files = staged ? stagedFiles() : workingFiles()
 
 const findings: Finding[] = []
 for (const file of files) {
