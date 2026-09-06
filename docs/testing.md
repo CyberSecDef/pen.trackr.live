@@ -81,3 +81,34 @@ lab addressing appears legitimately throughout this project, so the rules key on
 A line that genuinely needs to keep such a detail can append
 `pentrackr-allow-infra`, which puts the exception in the diff where a reviewer
 sees it rather than in a config file where nobody does.
+
+## The unlink retries in test teardown
+
+Every test that creates a temporary ledger tears it down with
+`rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })`.
+Those retries were added while chasing an `EBUSY: unlink` failure on Windows CI,
+on the reading that WAL sidecar files were racing teardown.
+
+**That reading was wrong.** The retries did not fix it, which is what pointed at
+the real cause: `LedgerStore` opened the database and then threw on a schema
+version mismatch, leaking the handle, so the file was genuinely still open rather
+than briefly locked. Fixing that fixed the failure.
+
+The retries stayed anyway, and the justification recorded at the time — that WAL
+sidecars do produce real races — was plausible but unverified. Measured since, on
+real Windows hardware: the ledger suite passes **10 out of 10 runs with the
+retries removed entirely**.
+
+They are kept regardless, and it is worth being precise about why, because the
+measurement does not say what it might appear to:
+
+- The original failure happened on a **CI runner**, with shared virtualized
+  storage and a virus scanner, not on the hardware the 10 runs used. Ten passes
+  on a fast local disk is weak evidence about a slow shared one.
+- Keeping them costs nothing at runtime when no race occurs.
+- Removing them to tidy the code risks reintroducing an intermittent red build in
+  the one environment not covered by the measurement, for no benefit.
+
+So they are **precautionary, not proven necessary** — which is different from the
+load-bearing fix, and a distinction worth keeping straight if someone later
+wonders whether they can go.
