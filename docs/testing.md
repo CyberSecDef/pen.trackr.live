@@ -66,7 +66,18 @@ calls rather than things a scanner will catch for you:
 The second rule was added after the fact: an earlier version of this file named
 the SSH account for the Windows host, and plan.md carried its LAN address. Both
 were caught in review rather than by CI, because secret scanning matches
-credential *patterns* and neither of those is one. Writing the rule down is the
-mitigation; a regex broad enough to catch it would flag the RFC1918 ranges that
-legitimately appear throughout a penetration-testing tool's documentation and
-tests.
+credential *patterns* and neither of those is one.
+
+Three layers now enforce it, deliberately narrow so they do not cry wolf — 10.x
+lab addressing appears legitimately throughout this project, so the rules key on
+`user@host` forms, home-LAN ranges, and key paths instead:
+
+| Layer | Runs | Binds |
+|---|---|---|
+| `pnpm run hygiene` | `pnpm run check`, and the `security` workflow | Every pull request, whoever or whatever wrote it |
+| `.claude/hooks/hygiene-staged.sh` | Before a `git commit` in Claude Code | Commits made through Claude Code on this machine. Fail-open by design: CI is the real gate |
+| `.claude/skills/pre-pr-review` | Loaded before opening a pull request | The judgement calls no pattern catches — overclaiming, unstated limitations, requirement-ID honesty |
+
+A line that genuinely needs to keep such a detail can append
+`pentrackr-allow-infra`, which puts the exception in the diff where a reviewer
+sees it rather than in a config file where nobody does.

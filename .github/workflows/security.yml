@@ -49,3 +49,28 @@ jobs:
 
       - name: Audit
         run: pnpm audit --audit-level moderate
+
+  hygiene:
+    name: repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Secret scanning matches credential patterns. A private address or an
+      # account name is neither — it is judgement, and judgement is what got
+      # this wrong once. These rules are narrow on purpose: 10.x lab addressing
+      # appears legitimately throughout this project's docs, tests, and
+      # fixtures, so a broader rule would cry wolf and end up switched off.
+      - name: Infrastructure details
+        run: pnpm run hygiene

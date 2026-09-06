@@ -1,0 +1,17 @@
+{
+  "name": "@pentrackr/hygiene",
+  "version": "0.0.0",
+  "description": "Refuses internal infrastructure details in a public repository",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pentrackr-hygiene": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

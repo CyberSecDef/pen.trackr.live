@@ -8,6 +8,9 @@
       "path": "./packages/ledger"
     },
     {
+      "path": "./tools/hygiene"
+    },
+    {
       "path": "./tools/trace"
     }
   ]
