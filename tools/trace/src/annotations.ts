@@ -30,10 +30,16 @@ const SKIP_DIRECTORIES = new Set([
   '.pnpm-store',
 ])
 
+// .mts/.cts belong here for the same reason .mjs/.cjs do: an annotation in a
+// module-flavoured source file must still count, or a requirement could be
+// implemented in a file the gate cannot see.
 const SOURCE_EXTENSIONS = new Set([
   '.ts',
   '.tsx',
+  '.mts',
+  '.cts',
   '.js',
+  '.jsx',
   '.mjs',
   '.cjs',
   '.py',
