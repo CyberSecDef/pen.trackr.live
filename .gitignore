@@ -20,9 +20,9 @@ fixtures/local/
 
 # Engagement data — never belongs in this repo
 *.pentrackr/
-ledger.db
-ledger.db-wal
-ledger.db-shm
+*.db
+*.db-wal
+*.db-shm
 blobs/
 vault/
 
