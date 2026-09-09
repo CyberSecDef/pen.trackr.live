@@ -1,8 +1,8 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.6
+**Plan version:** 0.8
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** M0 and M1 complete — see the snapshot below. M2 is next. Decision log at §14; milestone progress tracked inline in §6.
+**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1 behavior contracts are complete and M2.2 is next. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
 
@@ -17,7 +17,7 @@
 | Tests | **412**, 98.35% statements, 93.65% branches, 100% functions |
 | Platforms verified | Linux, Windows (CI + `baldr`), macOS (CI only) |
 | ADRs | 13, one superseding and one amending an earlier decision |
-| Next | **M2** — projects, engagement states, core API |
+| Next | **M2.2** — package boundaries and schemas; M2.1 contracts completed 9 September 2026 |
 
 **What a reader should take from that:** the tamper-evidence layer is real and tested, and nothing else exists yet. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine, and none of them produce anything visible. The first milestone that feels like a product is M6.
 
@@ -55,6 +55,7 @@ The SRS is frozen as the baseline. Everything below diverges from it, deliberate
 | Δ6 | FR-SCRP-001/002: scripts library holds generated or imported scripts | Existing `htba` automations used as **inspiration only** — hardened first-party scripts authored here | Your call. `auto_nmap.sh` and `nmapAutomator.sh` are third-party and unaudited; a public repo shouldn't ship them, and a scripts library seeded with reviewed originals is worth more than one seeded with inherited shell. |
 | Δ7 | FR-CASE-003: external artifact import | Cap imported as a **real demo project**, other nine as fixtures | Gives one populated project for exercising reports and UI against real data. |
 | Δ8 | §31: "core service on localhost" | Core on the laptop; **agent dials out** from the attack host | Loopback default (FR-UI-012) still holds for the core API. The agent makes an outbound connection, so no inbound port is opened on the attack host. |
+| Δ9 | §3.2: Paused / Blackout only if a window or RoE was provided | **Manual pause is available without RoE or testing windows.** Blackout remains tied to configured restrictions. | Maintainer decision, 9 Sep 2026: operators must be able to pause any live engagement independently of its paperwork. |
 
 ---
 
@@ -276,9 +277,153 @@ Project rails: toolchain, CI, packaging, traceability, and the decision record.
 - **Append latency, measured on three environments** with `synchronous = FULL` (every append is an fsync): **0.27 ms** on the Linux dev host, **2.0 ms** on real Windows hardware (`baldr`), and roughly **20 ms** on a GitHub Actions Windows runner. The CI figure was recorded first and is *not* representative — shared virtualized storage, not a laptop. Against NFR-003's 20 ms budget the real number leaves ample headroom, so appending off the runner's hot path at M4 remains good design rather than a necessity. Recorded here because the first version of this note asserted the CI figure as fact, which would have distorted an M4 decision.
 
 ### M2 — Projects, states, core API (M, ~40h)
-Engagement CRUD and metadata, the §3.2 state machine including Lab mode, project switcher, loopback API + WS, OpenAPI generation, keychain token.
-**Closes:** FR-ENG-001..015, FR-UI-003, FR-UI-012, NFR-001, NFR-002.
-**Exit:** acceptance item §28.1 — two projects, switched, isolated ledgers, `project.switched` recorded.
+
+**Status: in progress; M2.1 complete, M2.2 next (9 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
+
+The original ~40h estimate predates this breakdown. Retain it as the original estimate, not a commitment; re-estimate after M2.1 resolves the lifecycle and authentication choices. Work through the phases below in order, with tests alongside each implementation and one commit per phase (D18). Unchecked boxes are remaining work; resolving the planning questions does not mark their implementation complete.
+
+**Starting point verified in this repository:** `packages/ledger` provides Zod envelope validation, generic CBOR-compatible payloads, 52 event names, UUIDv7, hash chaining, SQLite storage, checkpoints, and rebuildable projections. `packages/cli` exposes `verify`, `seal`, `log`, and `keygen`. There is no engagement model, project registry, HTTP server, keychain adapter, or API client yet. The ledger currently permits multiple engagement IDs in one database; project ownership must be enforced by the new service. Append and projection catch-up are separate transactions, so recovery and retry behavior need explicit tests.
+
+**Review baseline (9 September 2026, local Linux, Node 22.22.1):** lint, typecheck, **539 tests in 17 files**, coverage thresholds, and traceability passed; hygiene passed when rerun outside the execution sandbox after its Git subprocess was blocked. Coverage: 98.35% statements, 93.39% branches, 100% functions, 98.47% lines. Traceability remains 5 of 216 requirements. The 412-test snapshot above is historical; this run does not re-verify Windows or macOS.
+
+#### Scope and requirement accounting
+
+The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too broad for the dependencies available at M2. The following is the intended allocation, not a completion claim:
+
+| Requirement | M2 deliverable | Remaining completion dependency |
+|----|----|----|
+| FR-ENG-001, 006..014 | Typed, validated, event-backed metadata and CRUD/query behavior; local operator identity and roster mapping | Target full closure in M2 for the metadata requirements. Scope execution, correlation, and dual-control enforcement belong to later subsystems. |
+| FR-ENG-002..004 | Optional document metadata and attachment-reference contract; bundled SOW, NDA, and authorization templates | M3: attach, retain, retrieve, and verify actual document bytes. No fake successful attachments in M2. |
+| FR-ENG-005 | Structured RoE, blackout windows, policy metadata, and RoE template | M5: execution actually honors RoE. |
+| FR-ENG-015 | Lab creation, state/mode in API and CLI, no legal-document prerequisite, ordinary ledger | M4: live runner; M6/M10/M16: banners in each client. |
+| FR-ENG-016 | Ship all six document templates; previously omitted from the milestone allocation | Target full closure in M2. |
+| FR-UI-003 | Shared active context, isolated stores, audited switches, two independent API clients observing the same selection | M4/M7: terminal and secret lifecycle integration; M6/M10/M16: client switcher behavior. |
+| FR-UI-012 | Loopback default; wider bind requires an explicit setting, warning, and configuration audit | Target full closure in M2. |
+| NFR-001, NFR-002 | Installed core, CLI, authentication, and project operations work locally with external networking unavailable | Validate M2 behavior now; repeat against the complete MVP, including disabled model/remote integrations. |
+| FR-SECPL-004; §28.1 | Switch cleanup hooks and project isolation tests | M7: bounded unloading of actual vault secrets. M2 does not close this requirement or all of §28.1. |
+
+`tools/trace` checks the presence of implementation/test annotations, not behavioral completeness or the prose in this plan. At closeout, compare each proposed claim with the entire requirement text. Keep partial work documented here without creating paired annotations that falsely report full completion; changing the trace tool itself is not a prerequisite for M2.
+
+#### M2.1 — Resolve the behavior contract — ✅ COMPLETE
+
+- [x] Record the transition matrix for Draft, Lab, Active, Paused, Blackout, Closing, and Closed: permitted edges, reasons, preconditions, resume destination, repeat requests, and Closed reopening. Define whether Lab identity survives a temporary lifecycle state.
+- [x] Resolve the three maintainer questions below and record the approved departure from SRS §3.2 in §2 (Δ9); decisions D26–D28 record the agreed scope.
+- [x] Add implementation ADRs where needed, including the headless authentication extension to ADR 0003, without rewriting accepted ADRs.
+- [x] Specify one active project shared by all attached clients (FR-UI-003), explicit project IDs on project operations, switch generation/revision checks for stale clients, and the behavior of concurrent requests during a switch.
+- [x] Define the storage and API contracts: registry location, configurable project root, create versus register-existing behavior, removal semantics, supported schema versions, error format, and service configuration audit destination even before a project exists.
+
+**Maintainer decisions (9 September 2026):** Closed projects support audited reopening; manual pause works without RoE/testing windows (Δ9). Removing a project only unregisters it and preserves all files; show the operator a warning that the directory and its contents remain. Headless Linux authentication without an OS keychain is required in M2. These scope questions are resolved; the contracts below define their behavior, and executable implementation remains in the later M2 phases.
+
+**Results:** [M2 core behavior contract](docs/m2-core-contract.md), [ADR 0014](docs/adr/0014-project-lifecycle-and-core-ownership.md), and [ADR 0015](docs/adr/0015-headless-api-authentication.md) define the transitions, project layout and registration, local audit, explicit API routes/errors, context/revision preconditions, retry handling, recoverable destination-ledger switch audit, and desktop/headless credential lifecycle. Existing ADRs and the SRS are unchanged. This is completed design work, not a working server or additional requirement closure. Documentation links, diff whitespace, and repository hygiene are the phase checks; executable conformance tests arrive with implementation.
+
+**Implementation defaults raised with the maintainer:** Lab identity persists through pause/closure/reopening, and Closed content edits require audited reopening. These were posed as optional questions during M2.1 and are recorded as defaults, not explicit maintainer approvals. A different answer updates the contract before dependent implementation. Blackout is a derived effective restriction layered over the operator's lifecycle state; M5 implements evaluation so a window ending cannot accidentally undo manual pause.
+
+**Handoff to M2.2:** derive strict schemas from the contract without a second handwritten OpenAPI source. Detailed credential-container algorithms/parameters are intentionally an M2.10 implementation ADR, and the portable ownership primitive is selected/tested in M2.3. The initial ~40h milestone estimate remains unvalidated: headless credential storage, recovery, and three-OS packaging need implementation evidence before a reliable replacement estimate can be recorded.
+
+#### M2.2 — Establish package boundaries and contracts
+
+- [ ] Add a project/domain workspace package and `packages/server`; wire TypeScript references, package exports, build order, test discovery, and runtime dependencies. Keep project/state rules independent of Fastify and clients; reuse `@pentrackr/ledger`.
+- [ ] Define strict Zod request, response, event-payload, and configuration schemas with explicit versioning. Reject unknown fields and distinguish omitted patch fields from explicit clearing. Use named payload versions without changing M1 envelope/hash semantics.
+- [ ] Define the JSON representation of ledger values that JSON cannot represent directly, including CBOR byte strings and big integers. Test lossless wire round-trips without changing the authoritative CBOR or its hashes.
+
+#### M2.3 — Project directories, registry, and local identity
+
+- [ ] Implement ADR 0002's project layout (`ledger.db`, `project.toml`, and reserved `blobs/`, `vault/`, `files/` directories). Treat metadata/state in `project.toml` as a recoverable mirror of ledger truth, not an independent editable source.
+- [ ] Create projects with stable UUIDv7 identities and an `engagement.created` event; validate before side effects. Handle interrupted creation, existing/nonempty paths, duplicate IDs, permissions, and cleanup of only artifacts created by the failed operation.
+- [ ] Implement register/list/open/unregister according to M2.1, including moved/missing directories and conflicting registrations. Rebuild cached list metadata from each registered project's ledger; keep local path registration separate from portable engagement truth.
+- [ ] On unregister, show a warning that project files remain on disk, including the directory location and how to register it again. Return structured preservation/warning information through the API so every client can display it; test that unregister never deletes project files and that re-registration preserves identity and history.
+- [ ] Persist one local operator identity and map roster entries to it where appropriate. Validate event attribution server-side; a client cannot supply another operator or engagement identity in an envelope.
+- [ ] Enforce canonical path handling and one owning core per managed project; test symlink/path aliases, traversal attempts, competing opens, stale ownership after a crash, and Windows handle release. Opening an unknown project must not silently create an empty ledger through the current `openLedger()` behavior.
+
+#### M2.4 — Engagement metadata model
+
+- [ ] Model client/display name, immutable engagement ID, internal code name, assessment types, roster, source IPs, escalation/deconfliction contacts and 24/7 flags, jurisdiction, and data-handling requirements. Include the documented wireless/physical/social placeholder enums without adding modules.
+- [ ] Model optional SOW/NDA/authorization metadata, NDA effective dates, and future document references. Store no attachment bytes or credentials in generic metadata; unsupported attachment operations must report that M3 support is required.
+- [ ] Model scope inclusions and exclusions for every FR-ENG-006/007 type, including mobile apps; use stable scope-object IDs and explicit absent-versus-empty scope semantics. Validate syntax without DNS lookups or target contact; leave membership verdicts to M5.
+- [ ] Model optional RoE, permitted/forbidden techniques, destructive policy (`forbid`, `require dual-control`, `allow-in-window`), testing windows, after-hours permissions, and blackout windows. Validate real dates, start/end ordering, IANA timezones, and DST ambiguity policy. Retention instructions are metadata, never an automatic destruction scheduler.
+- [ ] Test minimal Draft/Lab projects with no legal material, field limits, malformed addresses/dates, duplicate identities, clearing optional fields, and metadata round-trips through canonical ledger payloads.
+
+#### M2.5 — Event-backed mutations and projections
+
+- [ ] Implement typed `engagement.created`, `engagement.updated`, `engagement.state-changed`, `scope.object-added`, and `scope.excluded` payloads. Specify correction/removal semantics for scope and other collections; add event types only when existing meanings are insufficient, preserving old events.
+- [ ] Build engagement, scope, RoE/window, roster, and contact projections using `ProjectionRunner`. Validate payload versions during replay; refuse unsupported project history clearly rather than interpreting it under the newest schema.
+- [ ] Route all business mutations through a service that checks engagement ownership and expected revision, appends durable events, catches projections up, and returns the committed revision/event identity. Prevent lost updates and define idempotency for retries after a committed event but lost response.
+- [ ] Test stale revisions, conflicting writers, duplicate retries, append/projection failure boundaries, restart catch-up, and full projection rebuild. Compare rebuilt views and unchanged ledger hashes/checkpoints; expose repair errors instead of serving stale views as current.
+
+#### M2.6 — Engagement state machine
+
+- [ ] Implement the approved M2.1 matrix as a pure transition policy plus an audited service operation. Return allowed transitions and reasons to clients; keep this logic out of CLI/HTTP handlers.
+- [ ] Preserve no-document creation and the SRS's Draft/Lab runner availability in the future runner contract. Represent Closed as runner-disabled and Closing's persistence/destructive behavior as policy information for M4/M5; do not claim execution enforcement yet.
+- [ ] Persist previous/resume state where required and distinguish operator-declared lifecycle changes from window-derived restrictions. Scheduled scope enforcement remains M5. Closing/Closed must not require nonexistent reports, vaults, or cleanup projections; define hooks for M8/M9.
+- [ ] Test every allowed and rejected transition, missing prerequisites, reason requirements, no-op/retry behavior, concurrent transitions, and restart/replay. Closing a project and signing a checkpoint remain distinct operations.
+
+#### M2.7 — Project switching and isolation
+
+- [ ] Implement a serialized switch lifecycle: prepare/validate target, drain or reject conflicting work, persist source, run disposal hooks, load target projections, audit the switch, publish the new shared context. Define bounded hook timeouts and failure outcomes.
+- [ ] Specify which ledger(s) receive `project.switched`, correlation IDs, initial selection, same-project selection, and switching to/from an unavailable project. If both ledgers are written, implement recoverable steps; two independent SQLite databases are not one atomic transaction.
+- [ ] Add explicit runner/vault lifecycle interfaces for M4/M7, with test doubles proving hook ordering and disposal failure behavior. Never redirect an in-flight mutation to the newly active project merely because the global selection changed.
+- [ ] Test switching A→B→A with distinct metadata/events, failure at each boundary, restart after an interrupted switch, two clients racing a switch, and stale requests. Both ledgers must verify, clients must converge on one context, and old project subscriptions/caches must be detached according to the contract.
+
+#### M2.8 — Core process and loopback boundary
+
+- [ ] Build a configurable Fastify service with explicit start/stop, injectable dependencies, health/readiness, local discovery information, clean shutdown, and startup errors for invalid configuration or occupied ports. Publish readiness only after authentication and recovery succeed.
+- [ ] Bind loopback by default; cover IPv4 and IPv6 behavior. A non-loopback bind requires explicit opt-in, a visible warning, and a durable configuration audit without putting tokens in the audit. Document transport expectations for wider exposure; agent pairing/mTLS remains M13.
+- [ ] Enforce Host/Origin policy for HTTP and WS, narrowly configured browser origins, bounded request sizes, timeouts, and safe error/log output. Test hostile origins/hosts and unauthenticated requests as well as allowed native clients without Origin headers.
+
+#### M2.9 — REST resources and query contract
+
+- [ ] Implement versioned routes for project create/register/list/get/update/unregister, state transitions, active-context read/switch, metadata/scope queries, projection rebuild, and paginated ledger reads. Final route spellings and CLI names come from the M2.1 contract.
+- [ ] Return project list name, client, state/mode, and window; report findings/task counts as unavailable until those projections exist instead of inventing zero counts. Define deterministic sorting and bounded pagination.
+- [ ] Generate event IDs, timestamps, timezone fields, and operator attribution in the core. Accept domain commands, not arbitrary client-authored ledger envelopes; validate path/body identity agreement and revision preconditions.
+- [ ] Standardize validation, authentication, not-found, conflict, unavailable-project, unsupported-version, and internal-error responses. Test requests through Fastify injection and a real loopback listener, including malformed bodies and methods that must not mutate state.
+
+#### M2.10 — Authentication and credential lifecycle
+
+- [ ] Implement an OS-keychain adapter under ADRs 0003/0007, with a test adapter and separate namespaces for API tokens versus signing/encryption keys. Verify the selected binding and prebuilt packaging on the supported OSes before relying on it.
+- [ ] Generate, retrieve, rotate, and revoke high-entropy API credentials; authenticate HTTP and WS before exposing project data. Test missing/invalid credentials, keychain denial/lock, restart persistence, rotation, and invalidation of existing sessions.
+- [ ] Specify secure handoff to CLI and future browser clients. Account for browser WebSocket authentication constraints; never place long-lived tokens in command arguments, query strings, committed files, project metadata, or logs. Test logs/errors for token disclosure.
+- [ ] Implement explicit headless authentication mode without a desktop session, Secret Service, or OS-keychain dependency. Use the same authenticated HTTP/WS contract as desktop mode; keychain absence must never silently disable authentication. Keep API authentication separate from M7's engagement encryption and vault keys.
+- [ ] Provide initialization and unlock commands for a passphrase-encrypted local API credential store outside project directories. Generate the API token with cryptographic randomness; protect it using authenticated encryption and a salted password KDF. Record the format/version, algorithm and parameter choices, bounded input/work limits, atomic updates, owner-only directory/file permissions, and tamper/wrong-passphrase behavior in the authentication ADR before implementation.
+- [ ] Accept the unlock passphrase through a hidden terminal prompt for interactive SSH use or a dedicated inherited file descriptor for service-managed startup. Supply the client credential through the same explicit provider boundary. Never pass secrets in argv or persist plaintext credentials; unattended startup requires an external credential provider, not an embedded unlock key. Document how both the core and CLI authenticate, restart, rotate credentials, and recover from a lost passphrase by resetting local API credentials without changing project history.
+- [ ] Test headless initialization, core startup, CLI HTTP access, WS authentication/reconnect, restart/unlock, rotation/revocation, wrong passphrases, malformed/tampered stores, unsafe permissions, missing credential input, and noninteractive failure without hanging for a prompt. Run installed-bundle integration with no desktop/keychain and no external network. Check that prompts, logs, errors, and audit records disclose neither tokens nor passphrases.
+
+#### M2.11 — WebSocket events and context notifications
+
+- [ ] Define versioned subscribe/unsubscribe, event, context-change, error, and resync messages with explicit project IDs and sequence cursors. Keep durable ledger events distinct from transient service/context notifications; no PTY protocol implementation before M4.
+- [ ] Publish only committed events. Implement bounded replay followed by live delivery without a gap at the handoff; document duplicate handling and reconnect after a service restart. A cursor is scoped to one project, never reused across ledgers.
+- [ ] Implement heartbeat/disconnect cleanup, backpressure and slow-client limits, invalid-cursor behavior, and switch subscription rules. Test two clients, reconnects, duplicate delivery, disconnect during a switch, unauthorized subscriptions, and absence of cross-project event leakage.
+
+#### M2.12 — Generated contracts and usable CLI
+
+- [ ] Generate OpenAPI and the M2 payload schema appendix from the Zod contracts; publish WS schemas/protocol documentation alongside them. Add deterministic generation/drift checks and a shared generated TypeScript API client usable by Node and future browser clients (ADR 0003).
+- [ ] Extend `pentrackr` with core startup/status and project create/list/show/update/state/switch/register/unregister/rebuild commands. Support scriptable JSON output, clear exit codes, and schema-validated metadata input without putting tokens in argv.
+- [ ] Make new business commands use the authenticated API. Preserve M1 `verify`/`seal`/`log`/`keygen` compatibility, and define how offline maintenance commands behave when the core owns the same ledger so they cannot race projections or seals.
+- [ ] Exercise the generated client and CLI against a real temporary core: create two projects, edit metadata, transition, switch, query both histories, rebuild, stop, restart, and verify. Check help and failure output as well as successful operation.
+
+#### M2.13 — Optional engagement templates
+
+- [ ] Ship authorization letter, SOW/contract cover, NDA, RoE, scope worksheet, and escalation contact sheet under `docs/templates/`. Use clearly marked placeholders and match the metadata fields; filling a template is never an application authorization gate.
+- [ ] Expose template list/read/copy through the CLI/API and include the files in release bundles. Copy into operator files without silently attaching them or overwriting existing work; document that attachment ingestion arrives in M3.
+- [ ] Verify all six templates are available from an installed bundle, contain no real engagement/infrastructure data, and allow projects to proceed when none is used.
+
+#### M2.14 — Integration, packaging, and closeout
+
+- [ ] Run the M2 acceptance scenario below with synthetic fixtures; add crash/recovery and adversarial isolation tests alongside the relevant phases. Verify installed operation with external networking disabled, including credential retrieval and schema/template access.
+- [ ] Extend bundle planning for new workspaces, transitive dependencies, static templates/schemas, and any platform-specific optional/native keychain packages. The current bundler walks `dependencies` and deduplicates by name; verify optional packages and conflicting dependency versions instead of assuming they are included correctly.
+- [ ] Upgrade the packaged smoke test from `--version` to core startup, authenticated project operations, and shutdown. Run checks and packaging on Linux, Windows, and macOS; distinguish real keychain integration coverage from injected adapters and list any platform gap.
+- [ ] Update README, operating/API documentation, ADR index, testing instructions, requirement annotations, and this milestone's actual results. Include data locations, recovery/rebuild, token rotation, wider-bind behavior, and remaining M3/M4/M5/M7 work. Preserve the frozen SRS.
+- [ ] Run `pnpm run check`, the generated-contract drift check, and bundle smoke tests; review the diff for data leakage and unearned requirement claims. Prepare the milestone PR with per-phase commits and the required CI results (D18/D24); mark M2 complete only after its exit criteria pass.
+
+**M2 exit criteria:**
+
+1. From an installed bundle, start an authenticated local core without cloud access, including headless Linux with no OS keychain. Authenticate CLI and WS clients, restart/unlock the core, and rotate credentials in that environment. Create a minimal Lab project and a Draft project with distinct metadata, with no legal documents required.
+2. Drive metadata edits and approved/rejected state transitions through the CLI/generated API client, including audited reopening and manual pause without RoE/windows. Successful mutations produce typed, attributed, verifiable events; rejected/stale requests do not alter project truth. Unregister a project, observe the files-preserved warning, and register it again with unchanged identity and history.
+3. Connect two independent clients, switch A→B→A, and observe the same active context with correctly attributed `project.switched` history. Inject a failed switch and a restart; recover to a documented, consistent state with no write or subscription routed to the wrong project.
+4. Rebuild projections and restart the service. Metadata, state, and scope match their pre-rebuild values, with unchanged historical hashes/checkpoints. Retried requests do not duplicate completed business operations.
+5. Reject unauthenticated HTTP/WS access and disallowed hosts/origins; demonstrate token rotation, authenticated reconnect, replay, and slow-client handling. Default listeners are loopback; wider exposure is explicit, warned, and audited.
+6. Generate reproducible API/schema artifacts and retrieve all six bundled templates. Three-OS checks and installed-bundle tests pass, with actual keychain coverage and any limitations stated.
+
+**Handoff:** M3 adds document bytes and attachment verification; M4 consumes state/switch hooks for runner availability and terminal ownership; M5 enforces stored scope/RoE/window policies; M6 builds the graphical switcher; M7 implements and measures actual secret disposal. Full §28.1 and FR-UI-003 remain tracked across those integrations.
 
 ### M3 — Blob store, manifest, lossless ingest floor (M, ~30h)
 Content-addressed store, file manifest, unknown-type cataloguing, external artifact import, manifest export.
@@ -474,6 +619,9 @@ Per the SRS's own instruction, so no breaking migration is needed later: wireles
 
 | # | Decision | Resolution | Date |
 |----|----|----|----|
+| D26 | Reopening and manual pause | **Closed projects support audited reopening. Manual pause works without RoE or testing windows** (Δ9). | 9 Sep 2026 (M2 planning) |
+| D27 | Project removal | **Unregister only; all project files remain.** Show the operator a warning that files remain on disk. | 9 Sep 2026 (M2 planning) |
+| D28 | Headless authentication | **Required in M2:** core and clients can authenticate on headless Linux without an OS keychain. The credential-store and unlock design is specified and tested in M2.10. | 9 Sep 2026 (M2 planning) |
 | D1 | Core language | **TypeScript / Node 22 LTS** everywhere. Python as plugin SDK target; Go held as the PTY escape hatch. Rust considered and rejected on maintainability. | 5 Sep 2026 |
 | D2 | Codex adapter | **CLI subprocess**, driving the `codex` app. Adapter interface carries `cli-subprocess` and `http-local` transports. | 5 Sep 2026 |
 | D3 | Default branch | **`master`**, unchanged. | 5 Sep 2026 |
