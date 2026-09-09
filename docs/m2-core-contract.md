@@ -1,341 +1,301 @@
 # M2 core behavior contract
 
-**Version:** 1 — M2.1, 9 September 2026
-**Implementation status:** Contract only. M2.2–M2.14 implement and test it.
+**Version:** 2 — M2.1 review corrections, 9 September 2026
+**Implementation status:** Contract only; M2.2–M2.14 implement and test it.
 
-This document resolves the project, state, and API behavior needed before
-schemas and handlers are written. It supplements the frozen SRS and
-[plan](../plan.md); exceptions belong in the plan's delta table. It is a living
-implementation contract. Accepted architectural choices are recorded separately
-in ADRs, which are not edited to erase earlier decisions.
+This implementation reference supplements the frozen SRS and [plan](../plan.md).
+Architectural decisions live in ADRs; SRS exceptions live in the plan's deltas.
 
 ## Storage and identity
 
-Paths are resolved by the core, never by the client machine. The local data
-directory is selected by `--data-dir`, then `PENTRACKR_DATA_DIR`, then:
+The core resolves paths. Data-directory precedence is `--data-dir`,
+`PENTRACKR_DATA_DIR`, then:
 
-| Platform | Default data directory |
+| Platform | Default |
 |---|---|
-| Linux | `$XDG_DATA_HOME/pentrackr`, or `$HOME/.local/share/pentrackr` when unset |
+| Linux | `$XDG_DATA_HOME/pentrackr`, otherwise `$HOME/.local/share/pentrackr` |
 | macOS | `$HOME/Library/Application Support/PenTrackr` |
 | Windows | `%LOCALAPPDATA%/PenTrackr` |
 
-Overrides must be absolute paths. An invalid configured base produces an error;
-it does not fall back to the working directory. The data directory holds
-`core.toml`, `registry.db`, `auth.enc` when selected, a private discovery file,
-and runtime ownership metadata. Secret values never appear in `core.toml` or
-discovery. Default project root is `<data-dir>/projects`; `--projects-dir` or
-`PENTRACKR_PROJECTS_DIR` overrides configuration for newly created projects.
-Existing registrations retain their paths. Authentication mode is explicitly
-configured as `keychain` or `passphrase` (ADR 0015).
+Overrides must be absolute; invalid bases fail startup. The directory holds
+`core.toml`, `registry.db`, optional `auth.enc`, private discovery, and ownership
+metadata. Configuration/discovery exclude secrets. New projects default to
+`<data-dir>/projects`; `--projects-dir` or `PENTRACKR_PROJECTS_DIR` overrides the
+configured root. Existing registrations retain their paths. Authentication
+explicitly selects `keychain` or `passphrase` (ADR 0015).
 
-Each project directory follows ADR 0002. `project.toml` contains format version,
-engagement ID, display name, kind/state, and the projected ledger revision; all
-business fields are rebuildable mirrors. The ledger owns business truth. Manual
-mirror edits cannot update a project. Conflicting IDs or unsupported formats
-require an error; missing/stale nonidentity mirror fields can be rebuilt from
-verified history. No silent schema upgrade modifies signed events.
+Headless core and CLI unlock `auth.enc` through a hidden terminal prompt or
+`--auth-passphrase-fd <number>`. The FD reader removes at most one trailing CRLF
+or LF; all other whitespace is preserved. Both inputs use strict UTF-8 and the
+same 1–1024-byte secret limit. ADR 0015 defines input bounds, credential rotation,
+and service startup. Missing noninteractive input fails with an actionable
+error; unattended startup needs an external credential provider.
 
-`registry.db` owns local registration (project ID → canonical directory), the
-local operator UUIDv7, active context, recovery intents, and local core audit.
-Cached project labels are disposable. Registration and operator identity are
-local installation data, not reconstructible from an arbitrary set of projects;
-document backing up this database with core configuration. Project exports
-exclude it. Ledger attribution preserves historical operator IDs after moving
-a project to another installation; new events use the receiving local operator.
-Roster entries can describe teammates without provisioning multiple users.
+Projects follow ADR 0002. `project.toml` mirrors ledger-owned format version,
+engagement ID, name, kind/state, and revision. Rebuild stale/missing nonidentity
+fields from verified history; reject conflicting IDs or unsupported formats.
+Signed events remain unchanged during upgrades.
+
+`registry.db` owns canonical registration paths, local operator UUIDv7, active
+context, recovery intents, and core audit. Back it up with core configuration;
+project exports exclude it. Imported projects preserve historical operator IDs;
+new events use the receiving operator. Roster entries describe teammates without
+provisioning users. Cached project labels are rebuildable.
 
 ### Create, register, and unregister
 
-- Create accepts `kind: engagement | lab`, a nonblank display name, optional
-  metadata, and optionally an absolute destination. Generate the engagement ID
-  in the core. Default destination uses that UUID, not a display name as a path.
-  Default state is Draft for an engagement and Lab for a lab. Legal artifacts
-  and client name are optional at creation.
-- An explicit destination must not exist. Validate the complete input before
-  creating files. Create using a private staging directory and a recoverable
-  registry intent; publish only once `engagement.created` is durable and the
-  layout is complete. Cleanup removes only files owned by that create attempt.
-  A crash after publication but before registration is recovered using the
-  intent, never by deleting a complete engagement.
-- Register accepts an absolute existing directory. Inspect layout/version and
-  verify history before opening it for writes. Require exactly one engagement
-  identity and a recognized `engagement.created` genesis payload. A standalone
-  M1 ledger remains readable by M1 tools but is not automatically promoted to a
-  project. Case import is a separate M15 operation.
-- Registration is idempotent for the same ID and canonical path. Reject a
-  second path with the same ID or a second ID at the same path. Moving a project
-  requires unregister/register, with unregister allowed for a missing path.
-  Symlink aliases resolve to the same canonical registration; credential and
-  ownership files themselves reject symlink substitution.
-- Unregister removes the registry entry only. Require switching away first if
-  it is active (`project_active` conflict). Do not touch project history, files,
-  keys, or directories. Return a structured warning with code `files_preserved`,
-  path, and re-registration instructions. CLI prints it to stderr even in JSON
-  mode; API includes it in the JSON response for other clients. No extra
-  confirmation prompt is required. Missing paths get an additional warning;
-  the operation does not claim files exist when it cannot verify them.
-- Missing, inaccessible, corrupt, or unsupported registered projects remain
-  listed with availability and error codes. Do not remove them or invent empty
-  histories. A failed open never calls the current create-on-open ledger path.
+- Create accepts immutable `kind: engagement | lab`, a nonblank name, optional
+  metadata, and optional absolute destination. Generate a UUIDv7 in the core;
+  use it for the default directory name. Initial state is Draft or Lab by kind.
+  Client name and legal artifacts are optional.
+- Explicit destinations must not exist. Validate input first, then create in
+  private staging with a durable registry intent. Publish after a durable
+  `engagement.created` and complete layout. Recover interrupted publication/
+  registration from the intent; failed-attempt cleanup removes only owned files.
+- Register an existing absolute directory: acquire ownership, inspect versions,
+  and verify history before writes. Require one engagement ID and recognized
+  `engagement.created` genesis payload. Standalone M1 ledgers remain usable by
+  M1 tools; project conversion/import belongs to M15.
+- Same ID/canonical path registration is idempotent. Conflicting IDs or paths
+  fail. Moves use unregister/register; missing paths can be unregistered.
+  Resolve symlink aliases; reject substitution of credential/ownership files.
+- Unregister requires switching away (`project_active` conflict otherwise).
+  Preserve every project file/key and return `files_preserved`, path, and
+  re-registration instructions. CLI prints the warning to stderr, including
+  JSON mode; API includes it for clients. No confirmation prompt. Missing paths
+  receive an additional availability warning.
+- Keep unavailable/corrupt/unsupported registrations listed with error codes.
+  Failed opens must not invoke the current create-on-open ledger behavior.
 
-One core instance owns a data directory, and a managed project may have only one
-core owner even across different data directories. Implement process ownership
-with canonical paths, exclusive acquisition, live-owner verification, and crash
-recovery. Never reclaim ownership merely because a timeout elapsed or a PID was
-reused. Unsupported/network filesystem locking must fail explicitly rather than
-claim exclusion. M2.3 chooses and tests the portable locking primitive.
+### Ownership and offline maintenance
+
+One core owns a data directory. Each available registered project has one
+exclusive owner across core instances, held until unregister or shutdown,
+including while inactive. Acquire ownership before opening its ledger.
+
+M1 `verify`, `seal`, and `log` remain offline commands: **stop the owning core
+first**, then acquire the same exclusive ledger lock for the command's lifetime.
+A live owner yields `ledger_in_use` and exit 75 before database access, with
+instructions to stop that core. `keygen` needs no ledger lock. M2 introduces
+neither API forwarding for these commands nor a shared-read exception; existing
+`verify` opens storage read/write and `log` rebuilds projections.
+
+M2.3 implements the ownership guard in core and offline CLI entry paths, using
+one lock identity derived from the canonical ledger path, including standalone
+M1 ledgers. Test core/CLI contention in both directions and path aliases. The
+primitive must support exclusive acquisition, live-owner verification, crash
+recovery, and handle release across three OSes. Timeouts/PID reuse alone cannot
+justify reclaiming a lock. Unsupported filesystem locking fails explicitly.
+
+A failed ownership acquisition leaves the registration unavailable with its
+error code. Core shutdown closes database handles before releasing ownership;
+offline commands release on success or failure. M2.3 tests crash recovery for
+both owner types. Later CLI work preserves M1 argument/output conventions and
+the existing environment-based signing-key input. Online ledger browsing uses
+the authenticated events API; offline maintenance creates no context switch.
 
 ### Versions and auditing
 
-Initial versions: HTTP namespace `/api/v1`, project format 1, registry format 1,
-and the existing ledger storage version 1. M2 domain payloads use envelope
-`schema_version: 1` interpreted by event type. Keep the M1 hash preimage and
-envelope unchanged. Projection versions are independently rebuildable. New
-payload versions require explicit handlers; unsupported domain history prevents
-project mutation without being mislabeled as hash tampering. Raw ledger
-verification remains independent of domain interpretation.
+Start with `/api/v1`, project/registry format 1, and existing ledger storage
+version 1. M2 payloads use envelope `schema_version: 1`, dispatched by event type.
+Preserve M1 envelope/hash semantics. Projection versions rebuild independently;
+unsupported payload history blocks mutation with a version error. Raw hash
+verification stays independent of domain interpretation.
 
-Core configuration and registration events belong in an append-only
-`core_audit` table in `registry.db`, with sequence, UTC timestamp, operator ID,
-request/operation ID, type, and nonsecret structured details. It includes
-configuration changes, wider-bind acknowledgment, registration, unregister,
-credential reset/rotation, switch recovery, and startup availability failures.
-Use database triggers against ordinary update/delete; this audit is not a
-signed engagement ledger and must not be advertised as tamper-evident. Audit
-and associated registry changes commit together. Failure to record a required
-configuration audit prevents readiness, including before a project exists.
+Append-only `core_audit` in `registry.db` records sequence, UTC time, operator,
+operation/request ID, type, and nonsecret details: configuration/wider binds,
+registration/unregister, credential reset/rotation, switch recovery, and startup
+availability failures. Use update/delete triggers; this is an unsigned local
+audit. Commit audit and registry changes together. Required audit failure blocks
+readiness, including before any project exists.
 
 ## Shared context and switching
 
-Every authenticated client observes one active project per core installation.
-An active project is a selection, not an engagement lifecycle state. Context is
-`{ instance_id, generation, project_id }`; instance ID is fresh on each process
-start, generation increments on successful selection changes, and project ID
-may be null. A new process recovers durable switch intent before publishing
-readiness and returns a fresh context even when it restores the same selection.
+All clients share `{ instance_id, generation, project_id }`. Instance ID changes
+on restart; generation increments per selection change; project ID may be null.
+Recover durable intent before readiness. Selection is independent of lifecycle.
 
-All project routes contain an explicit project ID. Reads may access any
-registered available project. Business mutations require that project to be
-active, its current context token, and its current revision. Inactive reads do
-not switch context. Registry operations have their own serialized boundary.
-Old clients must refetch context after a stale token or a service restart;
-the server never substitutes the currently active ID for an explicit ID.
+Project routes carry explicit IDs. Reads can access any available registration;
+business writes require active selection, current context, and revision.
+Registry operations serialize separately. Clients refetch stale context.
 
-Mutations and switches are serialized through the core coordinator. A request
-that entered before a switch completes against its original project; a queued
-request is revalidated on admission and fails if context or revision changed.
-New requests during a switch receive `switch_in_progress`, not indefinite
-queueing. Bound outstanding work and draining. Long-running runner processes
-later retain their original project/session attribution independently of UI
-selection; switching must not reassign their output to a new ledger.
+The core serializes mutations/switches. Admitted work finishes against its
+original project; queued work revalidates on admission. New requests during a
+switch receive `switch_in_progress`. Bound outstanding work and draining.
+Future runner output retains its original session/project attribution.
 
-Switch request: destination UUID or null, expected context, and an idempotency
-key. Initial selection counts as a switch. Selecting the already active project
-with current context is a no-op: no new event or generation. A stale same-target
-request still conflicts. Clearing selection is supported.
+Switch input: destination UUID or null, expected context, idempotency key.
+Initial selection is a switch. A current same-project selection is a no-op;
+a stale one conflicts. Clearing selection is supported.
 
-1. Validate target ownership, identity, versions, ledger integrity, and ability
-   to load projections before disrupting the source. Persist a local switch
-   intent with old/new selection, next generation, and a preallocated event ID.
-2. Drain admitted source mutations, catch up its projections, and run registered
-   disposal hooks. Hooks have a default 5-second deadline, configurable within
-   1–30 seconds; an unacknowledged timeout never counts as successful disposal.
-3. Load the target context. Append exactly one `project.switched` to the
-   **destination ledger**, with source/destination IDs, operation ID, and new
-   generation. Envelope engagement ID is the destination. The source ledger is
-   not also written: departure/recovery is recorded in local core audit. A
-   switch to null writes only core audit, never a fictitious engagement event.
-4. Commit active selection/generation and completed intent in `registry.db`,
-   then publish the context notification and acknowledge. A successful response
-   means both project audit (where applicable) and local selection are durable.
+1. Validate target ownership, identity, versions, integrity, and projection
+   loading. Persist intent with old/new selection, next generation, and event ID.
+2. Drain admitted source mutations, catch up projections, and dispose resources.
+   Hook deadline defaults to 5 seconds, configurable within 1–30 seconds.
+3. Load target and append one `project.switched` to its ledger: source/destination
+   IDs, operation ID, generation; envelope engagement ID is the destination.
+   Source departure/recovery and null-target switches use local core audit.
+4. Commit selection/generation and completed intent in the registry, then notify
+   clients and acknowledge. Success requires both applicable commits.
 
-A crash between steps 3 and 4 is recovered forward using the preallocated event
-ID: if present with matching operation data, finalize selection without another
-append. Before that commit point, abort to the old selection only if its hooks
-can restore a usable context; otherwise leave context null with a recovery
-error and refuse business mutations. A timed-out hook with unknown completion
-keeps the core unready until resolved or restarted. If the target event exists
-but the target cannot now be loaded, retain recovery information, expose null
-active context and an actionable unavailable-project error; never say the
-switch was rolled back by erasing history.
+Recover a crash between steps 3/4 forward using the event ID and matching
+operation data. Before step 3 commits, restore the source only if its hooks can
+restore usable resources; otherwise publish null context and reject mutations.
+Unknown hook completion keeps the core unready until resolved/restarted. A
+committed but now-unavailable target retains its recovery intent, with null
+context and an actionable error until recovery can finish.
 
-Default event subscriptions follow active context: stop old-project delivery
-before publishing the new context and require explicit subscription with its
-new token/cursor. An explicitly project-scoped read subscription can survive
-a selection change only if the client opted into it; every frame retains its
-project ID. Cursors never carry across projects. State-change, context-change,
-and durable ledger-event messages are distinct.
+Stop default old-project subscriptions before context notification; clients
+resubscribe with the new token/cursor. Explicit project-scoped read subscriptions
+may survive switches by opt-in. Every frame identifies its project; cursors are
+project-local. Context notifications and durable events remain distinct.
 
 ## Lifecycle and Lab identity
 
-The confirmed rules are audited reopening and manual pause without RoE/windows.
-Two defaults were raised with the maintainer during M2.1: immutable Lab identity
-and reopening before Closed content edits. The following uses those defaults;
-they are design choices, not additional user approvals. Record any subsequent
-answer before implementing M2.2/M2.6.
+Maintainer-confirmed: Lab identity persists, Closed content requires reopening,
+audited reopening is supported, and manual pause needs no RoE/testing window.
+Immutable `kind` is `engagement | lab`; labs retain their badge in every state.
 
-`kind` is `engagement` or `lab`, immutable in M2. A lab starts in Lab and always
-retains a Lab badge, including while Paused, Closing, or Closed. An engagement
-starts in Draft. No conversion between kinds is introduced. Internally the
-persisted lifecycle states are `draft`, `lab`, `active`, `paused`, `closing`,
-and `closed`. API/UI labels use the capitalization in the SRS.
+Persisted lifecycle enum: `draft`, `lab`, `active`, `paused`, `closing`, `closed`.
+Two nullable persisted fields support temporary states:
 
-Blackout is an **effective restriction**, not a substitute for the operator's
-underlying lifecycle intent. M5 computes it from configured RoE/time windows
-and records restriction changes. M2 stores those inputs and reports restriction
-evaluation as unavailable, never as an evaluated allow verdict. In M5, effective
-state is Blackout while a relevant restriction applies to Draft, Lab, Active,
-or Closing; Closed and manual Paused remain visible as those states, with
-restriction details separate. Thus a window ending cannot undo a manual pause.
-This refines SRS §3.2's display states without removing the Blackout state or
-moving execution enforcement into M2.
+- `resume_state`: Draft/Lab/Active/Closing while Paused; otherwise null.
+- `closing_origin`: Draft/Lab/Active throughout Closing and a pause of Closing;
+otherwise null. Preserve it across repeated closing commands and resume.
 
-### Transition matrix
+Validate saved fields against kind: an engagement's closing origin is Draft or
+Active; a lab's is Lab. A paused Closing requires both `resume_state: closing`
+and a valid closing origin. Other paused states have null closing origin.
+Malformed combinations fail replay/mutation with an explicit history error.
+Cancellation from a Paused-origin closing episode returns its saved underlying
+state, as requested; it does not restore the manual pause itself. Operators can
+pause the restored state again with a new audited reason.
 
-These are the complete operator commands. An unlisted edge is rejected with
-`invalid_transition`. Every command requires the shared-context/revision
-preconditions and an idempotency key. Reason is a trimmed nonblank string of
-1–2000 characters where required. Transition events contain operation ID,
-previous/next lifecycle state, kind, reason (null if optional and omitted),
-and previous/new resume state. Attribution and timestamps come from the core.
+### Persisted-state transition matrix
 
-| From | Command → To | Preconditions and effects | Reason |
+Unlisted edges return `invalid_transition`. Commands require context/revision
+preconditions and an idempotency key. Required reasons are trimmed, nonblank,
+1–2000 characters. Events carry operation ID, kind, before/after state and both
+saved fields, reason (nullable), and core-generated attribution/timestamps.
+
+| From | Command → To | Saved-state behavior | Reason |
 |---|---|---|---|
-| Draft | activate → Active | Engagement kind; legal artifacts optional | Optional |
-| Draft | pause → Paused | Save Draft as resume state; no RoE/window prerequisite | Required |
-| Lab | pause → Paused | Save Lab as resume state | Required |
-| Active | pause → Paused | Save Active as resume state | Required |
-| Closing | pause → Paused | Save Closing as resume state | Required |
-| Paused | resume → saved state | Resume only saved Draft/Lab/Active/Closing; clear resume field | Required |
-| Draft, Lab, Active | begin_closing → Closing | No report/cleanup prerequisites in M2 | Required |
-| Paused | begin_closing → Closing | Discard saved resume state | Required |
-| Closing | cancel_closing → Active or Lab | Engagement returns Active; lab returns Lab | Required |
-| Closing | close → Closed | Clear resume state; future runner must quiesce before acknowledging closure | Required |
-| Closed | reopen → Active or Lab | Engagement returns Active; lab returns Lab; preserves all prior history/checkpoints | Required |
-| Blackout (effective) | pause → Paused | Apply to underlying Draft/Lab/Active/Closing; preserve that resume state | Required |
-| Blackout (effective) | begin_closing → Closing | Underlying state changes; effective Blackout persists if restriction still applies | Required |
-| Blackout (effective) | underlying-state command | Only an otherwise allowed edge; cannot clear/bypass a restriction | As above |
-| Any | set/clear Blackout | Operator command rejected; M5 derives restriction from current policy/time | — |
+| Draft | activate → Active | Engagement kind | Optional |
+| Draft, Lab, Active | pause → Paused | Save source in `resume_state` | Required |
+| Closing | pause → Paused | Save Closing; retain `closing_origin` | Required |
+| Paused | resume → saved state | Clear `resume_state`; retain closing origin when returning to Closing | Required |
+| Draft, Lab, Active | begin_closing → Closing | Save source in `closing_origin` | Required |
+| Paused | begin_closing → Closing | Copy saved Draft/Lab/Active to closing origin; if saved Closing, retain existing origin; clear resume | Required |
+| Closing | cancel_closing → closing origin | Restore Draft/Lab/Active; clear both saved fields | Required |
+| Closing | close → Closed | Clear both saved fields; future runner quiesces first | Required |
+| Closed | reopen → Active or Lab | Destination follows kind; saved fields null | Required |
 
-Draft cannot close directly; use begin_closing then close. Reopening does not
-return to Draft and never erase the preceding close event. Lab and Active are
-the runnable identities for their respective kinds, not interchangeable states.
-No required document, testing window, or RoE is added by these transitions.
+Draft→Closing→cancel restores Draft, including Draft→Paused→Closing→cancel.
+A paused-Closing detour preserves the original destination. Closing cancellation
+never promotes Draft to Active. Draft closes through Closing; **reopening after
+actual closure deliberately returns Active or Lab**, preserving prior history.
+Legal artifacts and cleanup/report prerequisites remain optional in M2.
 
-A completed retry with the same idempotency key returns the original outcome
-without another event. With a new key, a command already satisfied in its target
-state is a no-op only for activate in Active, pause in Paused, begin_closing in
-Closing, and close in Closed. It must still pass current context/revision and
-reason validation. A new resume outside Paused or reopen outside Closed is an
-invalid transition, not a way to bypass state rules.
+Same-key retries return the original outcome. With a new key, activate in Active,
+pause in Paused, begin_closing in Closing, and close in Closed are no-ops after
+precondition/reason validation; saved fields remain unchanged. Resume outside
+Paused and reopen outside Closed fail.
 
-Manual pause prevents admission of new managed commands; it does not kill a
-running command or erase its completion output. M4 defines process draining and
-existing/raw-session behavior with the SRS's raw-capture rules. Closed disables
-runner use; M2 exposes that eligibility but has no runner to enforce it. In
-Closing, persistence/destructive classes warn by default unless a stricter RoE
-rule applies. M5 combines state, scope, and restrictions; no transition grants
-an execution override. Window end, resume, and reopening all re-evaluate policy
-when that engine exists.
+### Effective-restriction interactions
 
-Closed projects permit reading, verification, checkpoint signing, projection
-rebuild, switching, and unregistering. Metadata/scope edits and template copying
-require reopen. Future export/access auditing and core `project.switched`
-events may still append; Closed does not make the SQLite file physically
-immutable. Signed checkpoints attest prefixes: later reopening and audit events
-do not invalidate prior checkpoints or pretend the new suffix is already sealed.
-The runner/vault/cleanup/report hooks integrate in their scheduled milestones.
+Blackout is computed by M5 from RoE/windows, separately from persisted lifecycle.
+M2 stores inputs and reports evaluation unavailable. M5 displays Blackout over
+Draft/Lab/Active/Closing when restricted; Paused/Closed retain their labels with
+restriction details. Window expiry therefore cannot undo manual pause.
+
+| Interaction during Blackout | Behavior |
+|---|---|
+| pause | Apply the persisted-state transition and preserve its saved fields |
+| begin_closing | Apply the persisted transition; restriction continues |
+| Other lifecycle command | Validate underlying state; re-evaluate restriction afterward |
+| Operator set/clear Blackout | Reject; policy/time evaluation owns it |
+
+Pause stops admission of managed commands; running commands retain output and
+completion. M4 defines draining/raw-session behavior and enforces Closed runner
+disablement. Closing warns for persistence/destructive classes unless RoE is
+stricter. M5 evaluates scope/policy on resume, reopening, and window changes.
+
+Closed allows reads, rebuild, switching, unregister, and offline verification/
+signing under the ownership rule above. Content edits, including metadata/scope
+and template copying, require reopening. Export/access and switch audit events
+may append. Checkpoints attest historical prefixes; new suffixes need sealing.
+A stored checkpoint remains verifiable after reopening. Closing does not
+automatically sign; the operator invokes offline `seal` with a signing key.
 
 ## API conventions
 
-M2.2 implements strict Zod schemas; generated OpenAPI is authoritative for wire
-field definitions. This contract sets behavior, not a second handwritten schema.
+M2.2 defines strict Zod schemas and generates OpenAPI wire definitions.
 
 | Operation | Route |
 |---|---|
-| Minimal health; authenticated readiness/context | `GET /healthz`; `GET /api/v1/status` |
-| Create/list projects | `POST /api/v1/projects`; `GET /api/v1/projects` |
-| Register an existing directory | `POST /api/v1/project-registrations` |
-| Unregister only | `DELETE /api/v1/project-registrations/{project_id}` |
-| Read/update project metadata | `GET`, `PATCH /api/v1/projects/{project_id}` |
-| Allowed transitions; state command | `GET /api/v1/projects/{project_id}/transitions`; `POST /api/v1/projects/{project_id}/transitions` |
-| Read/switch/clear shared selection | `GET`, `PUT /api/v1/context` |
-| Scope query; add/edit/remove include/exclude objects | `GET`, `POST /api/v1/projects/{project_id}/scope`; `PATCH`, `DELETE /api/v1/projects/{project_id}/scope/{scope_id}` |
-| Ledger page; rebuild projections | `GET /api/v1/projects/{project_id}/events`; `POST /api/v1/projects/{project_id}/rebuild` |
-| List/read templates; copy to project files | `GET /api/v1/templates`; `GET /api/v1/templates/{template_id}`; `POST /api/v1/projects/{project_id}/template-copies` |
-| Browser WS ticket; event stream | `POST /api/v1/ws-tickets`; `/api/v1/events/ws` |
+| Health; authenticated readiness/context | `GET /healthz`; `GET /api/v1/status` |
+| Create/list | `POST`, `GET /api/v1/projects` |
+| Register/unregister | `POST /api/v1/project-registrations`; `DELETE /api/v1/project-registrations/{project_id}` |
+| Read/update metadata | `GET`, `PATCH /api/v1/projects/{project_id}` |
+| Allowed transitions; command | `GET`, `POST /api/v1/projects/{project_id}/transitions` |
+| Read/switch/clear selection | `GET`, `PUT /api/v1/context` |
+| Scope query/add; edit/remove | `GET`, `POST /api/v1/projects/{project_id}/scope`; `PATCH`, `DELETE /api/v1/projects/{project_id}/scope/{scope_id}` |
+| Ledger page; rebuild | `GET /api/v1/projects/{project_id}/events`; `POST /api/v1/projects/{project_id}/rebuild` |
+| Templates list/read/copy | `GET /api/v1/templates`; `GET /api/v1/templates/{template_id}`; `POST /api/v1/projects/{project_id}/template-copies` |
+| Browser WS ticket; stream | `POST /api/v1/ws-tickets`; `/api/v1/events/ws` |
 
-Scope writes are typed domain commands. Removal is a compensating event;
-`DELETE` never deletes a ledger row. Other metadata collections use stable IDs
-and explicit patch semantics. Missing patch fields mean unchanged; null clears
-only nullable fields; arrays replace the named collection, never merge by
-position. Immutable ID/kind fields are rejected on updates. A no-change update
-returns the existing revision without an event after validating preconditions.
+Scope deletion appends a compensating event. Collections use stable IDs; omitted
+patch fields stay unchanged, null clears nullable fields, arrays replace the
+collection. Reject ID/kind edits. Validated no-change updates preserve revision.
 
-Revision is the current ledger head hash (null only before genesis, never for
-an established project). A switch audit event therefore advances revision too.
-Business mutations use `If-Match` with the quoted head hash and
-`X-PenTrackr-Context: <instance_id>:<generation>`. Missing preconditions yield
-428, stale revision yields 412, stale context/inactive project yields 409.
-Registry mutations require current context and an idempotency key, but no
-engagement revision; they serialize and revalidate registration conflicts.
+Revision is the ledger head hash; every established project has one. Switch
+events advance it. Business writes require quoted-hash `If-Match` and
+`X-PenTrackr-Context: <instance_id>:<generation>`. Registry mutations require
+context/idempotency, with registration conflicts checked serially.
 
-Every mutation supplies a UUIDv7 `Idempotency-Key`. Bind it to authenticated
-operator, method, route, and validated command body; identical completed retries
-return the original outcome before checking now-stale revision/context. A retry
-can never perform new work using stale preconditions. Reusing a key with another
-command yields 409. Persist the key and command digest with the authoritative
-event (or registry transaction), and reconstruct outcomes after restart. Event
-hash inputs are server-created. Failed validation never reserves a key; an
-operation already underway returns `operation_in_progress` until resolved.
-Persist successful no-op outcomes in the local operation registry without a
-spurious engagement event; retain their request identity for later retries.
-Local request replay records travel with the core registry, not a case export.
-Document and test recovery for filesystem operations such as template copying
-and creation, where a registry transaction alone cannot prove completion.
+Every mutation uses UUIDv7 `Idempotency-Key`, bound to operator, method, route,
+and validated body. Identical completed retries return the original outcome
+before stale-precondition checks; changed commands conflict. Persist key/digest
+with events or registry transactions and recover outcomes after restart.
+Validation failures leave keys available; in-progress retries return
+`operation_in_progress`. Successful no-ops persist locally without engagement
+events. Local replay records are excluded from case exports. Creation/template
+copying require filesystem recovery as well as registry transactions.
 
-Error body is `{ error: { code, message, request_id, details } }`. Details contain
-field paths and safe conflict/recovery information, never credentials, raw
-request bodies, stack traces, or arbitrary internal filesystem information.
-An explicit local registration/unregister response may return the requested
-project path. Status mapping:
+Errors: `{ error: { code, message, request_id, details } }`, with safe field paths
+and recovery/conflict details. Exclude secrets, raw bodies, stack traces, and
+internal paths; explicit registration responses may return the project path.
 
-| Status | Meaning/examples |
+| Status | Meaning |
 |---|---|
-| 400 | Invalid JSON, fields, dates, cursor, or transition reason |
-| 401 / 403 | Missing/invalid credential / disallowed origin or host |
-| 404 | Unknown resource; authenticate before resource lookup |
-| 409 | Invalid transition, inactive/active-project conflict, stale context, duplicate identity, reused operation key |
-| 412 / 428 | Stale revision / missing required precondition |
-| 413 / 415 | Request too large / unsupported content type |
-| 422 | Unsupported project format or payload version, invalid project history |
+| 400 | Invalid JSON, fields, dates, cursor, reason |
+| 401 / 403 | Invalid credential / disallowed origin or host |
+| 404 | Unknown resource; authenticate before lookup |
+| 409 | Invalid transition, inactive/active-project conflict, stale context, duplicate identity, reused key |
+| 412 / 428 | Stale revision / missing precondition |
+| 413 / 415 | Oversized request / unsupported content type |
+| 422 | Unsupported format/payload version or invalid history |
 | 429 | Connection/request/backpressure limit |
-| 503 | Switch/recovery in progress, unavailable project, ownership or storage unavailable |
-| 500 | Unexpected failure with request ID and sanitized message |
+| 503 | Switch/recovery, unavailable project, ownership/storage failure |
+| 500 | Unexpected failure; sanitized message and request ID |
 
-Default HTTP body limit is 1 MiB; uploads are M3. Page size defaults to 50,
-maximum 200. Events sort by ascending per-project sequence and use an exclusive
-`after_seq` cursor. Project lists sort by immutable UUID, with an exclusive ID
-cursor; live registration changes do not provide a snapshot across pages.
-Unavailable counts for tasks/findings are null with capability indicators,
-not fabricated zeros. `/healthz` reveals only process health; every API/schema/
-template/project endpoint requires authentication. Readiness is false before
-authentication, storage ownership, and recovery are ready.
+Body limit: 1 MiB (uploads M3). Pages: default 50, maximum 200. Events sort by
+ascending sequence with exclusive `after_seq`; projects sort by UUID with an
+exclusive ID cursor, without snapshot guarantees across registration changes.
+Unavailable task/finding counts are null with capability indicators. Only
+`/healthz` is public; API/schema/template endpoints require authentication.
+Readiness requires authentication, ownership, and recovery completion.
 
-Default bind is explicit `127.0.0.1`; `::1` is a supported explicit alternative.
-Do not resolve a hostname into an accidental wildcard bind. Non-loopback binding
-requires `--allow-non-loopback` plus an explicit bind address, prints a warning,
-and records the acknowledgment and effective configuration in core audit before
-listening. Headless mode does not change this default. Plain HTTP bearer
-credentials require a protected transport outside loopback (for example an
-operator-managed tunnel); native TLS/remote-agent transport is not added here.
-Host and Origin allowlists are explicit, never wildcard credentialed CORS.
+Bind defaults to `127.0.0.1`; explicit `::1` is supported. Wider binding requires
+an explicit address, `--allow-non-loopback`, visible warning, and configuration
+audit before listening. Headless mode uses the same default. Protect bearer
+transport beyond loopback with an operator-managed tunnel; native TLS/agent
+transport remains later work. Host/Origin allowlists are explicit.
 
 ## Verification handoff
 
-M2.3–M2.12 add executable tests for these contracts, particularly operation
-retries after a lost response, failed creation after publication, project-ID
-conflicts, stale context on restart, switch failure before/after its commit
-point, hook timeouts, missing projects, and authenticated headless operation.
-M2.1 changes documentation only and closes no additional SRS requirement.
+M2.3–M2.12 test restart/retries, interrupted creation, identity conflicts,
+core/offline-CLI ownership, stale context, switch commit boundaries/timeouts,
+and authenticated headless startup. M2.6 tests closing cancellation from every
+origin, including paused Draft and paused Closing, with replay of saved fields;
+Blackout tests belong separately to M5. M2.1 closes no additional SRS requirement.

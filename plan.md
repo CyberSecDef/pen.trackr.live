@@ -1,6 +1,6 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.8
+**Plan version:** 0.9
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
 **Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1 behavior contracts are complete and M2.2 is next. Decision log at §14; milestone progress tracked inline in §6.
 
@@ -8,15 +8,15 @@
 
 ## 0. Where this stands
 
-*Updated 5 September 2026, after M1.*
+*Updated 9 September 2026, after M2.1 review; latest local test baseline below.*
 
 | | |
 |----|----|
 | Milestones complete | **M0** (rails), **M1** (ledger spine) — 2 of 18 |
 | Requirements closed | **5 of 216** — `FR-SECPL-001`, `FR-SECPL-002`, `NFR-006`, `NFR-009`, `NFR-010` |
-| Tests | **412**, 98.35% statements, 93.65% branches, 100% functions |
-| Platforms verified | Linux, Windows (CI + `baldr`), macOS (CI only) |
-| ADRs | 13, one superseding and one amending an earlier decision |
+| Tests | **539 in 17 files**, 98.35% statements, 93.39% branches, 100% functions, 98.47% lines |
+| Platforms verified | Latest baseline: local Linux. M0/M1: Windows (CI + `baldr`), macOS (CI only) |
+| ADRs | 15; decision history and amendments indexed in `docs/adr/README.md` |
 | Next | **M2.2** — package boundaries and schemas; M2.1 contracts completed 9 September 2026 |
 
 **What a reader should take from that:** the tamper-evidence layer is real and tested, and nothing else exists yet. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine, and none of them produce anything visible. The first milestone that feels like a product is M6.
@@ -284,7 +284,7 @@ The original ~40h estimate predates this breakdown. Retain it as the original es
 
 **Starting point verified in this repository:** `packages/ledger` provides Zod envelope validation, generic CBOR-compatible payloads, 52 event names, UUIDv7, hash chaining, SQLite storage, checkpoints, and rebuildable projections. `packages/cli` exposes `verify`, `seal`, `log`, and `keygen`. There is no engagement model, project registry, HTTP server, keychain adapter, or API client yet. The ledger currently permits multiple engagement IDs in one database; project ownership must be enforced by the new service. Append and projection catch-up are separate transactions, so recovery and retry behavior need explicit tests.
 
-**Review baseline (9 September 2026, local Linux, Node 22.22.1):** lint, typecheck, **539 tests in 17 files**, coverage thresholds, and traceability passed; hygiene passed when rerun outside the execution sandbox after its Git subprocess was blocked. Coverage: 98.35% statements, 93.39% branches, 100% functions, 98.47% lines. Traceability remains 5 of 216 requirements. The 412-test snapshot above is historical; this run does not re-verify Windows or macOS.
+**Review baseline (9 September 2026, local Linux, Node 22.22.1):** lint, typecheck, **539 tests in 17 files**, coverage thresholds, and traceability passed; hygiene passed when rerun outside the execution sandbox after its Git subprocess was blocked. Coverage: 98.35% statements, 93.39% branches, 100% functions, 98.47% lines. Traceability remains 5 of 216 requirements. This run does not re-verify Windows or macOS.
 
 #### Scope and requirement accounting
 
@@ -314,9 +314,11 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 
 **Maintainer decisions (9 September 2026):** Closed projects support audited reopening; manual pause works without RoE/testing windows (Δ9). Removing a project only unregisters it and preserves all files; show the operator a warning that the directory and its contents remain. Headless Linux authentication without an OS keychain is required in M2. These scope questions are resolved; the contracts below define their behavior, and executable implementation remains in the later M2 phases.
 
-**Results:** [M2 core behavior contract](docs/m2-core-contract.md), [ADR 0014](docs/adr/0014-project-lifecycle-and-core-ownership.md), and [ADR 0015](docs/adr/0015-headless-api-authentication.md) define the transitions, project layout and registration, local audit, explicit API routes/errors, context/revision preconditions, retry handling, recoverable destination-ledger switch audit, and desktop/headless credential lifecycle. Existing ADRs and the SRS are unchanged. This is completed design work, not a working server or additional requirement closure. Documentation links, diff whitespace, and repository hygiene are the phase checks; executable conformance tests arrive with implementation.
+**Results:** [M2 core behavior contract](docs/m2-core-contract.md), [ADR 0014](docs/adr/0014-project-lifecycle-and-core-ownership.md), and [ADR 0015](docs/adr/0015-headless-api-authentication.md) define the transitions, project layout and registration, local audit, explicit API routes/errors, context/revision preconditions, retry handling, recoverable destination-ledger switch audit, and desktop/headless credential lifecycle. The SRS and ADRs 0001–0013 are unchanged. This is completed design work, not a working server or additional requirement closure. Documentation links, diff whitespace, and repository hygiene are the phase checks; executable conformance tests arrive with implementation.
 
-**Implementation defaults raised with the maintainer:** Lab identity persists through pause/closure/reopening, and Closed content edits require audited reopening. These were posed as optional questions during M2.1 and are recorded as defaults, not explicit maintainer approvals. A different answer updates the contract before dependent implementation. Blackout is a derived effective restriction layered over the operator's lifecycle state; M5 implements evaluation so a window ending cannot accidentally undo manual pause.
+**Confirmed lifecycle rules:** The maintainer confirmed that Lab identity persists through pause/closure/reopening and Closed content edits require audited reopening. Blackout is a derived effective restriction layered over lifecycle; M5 evaluates it separately from M2.6's six-state enum.
+
+**Review corrections to `c4d1c95`:** Contract v2 restores `closing_origin` on cancellation, including Draft/Paused paths and pauses of Closing; separates effective Blackout interactions from persisted transitions; and requires the owning core stopped for offline `verify`/`seal`/`log`, using the same exclusive lock implemented in M2.3. ADR 0015 now strips at most one terminal LF/CRLF from passphrase FD input. ADRs 0014/0015 carry dated review amendments at the maintainer's request. The contract is shortened, and the snapshot above uses the measured 539-test baseline.
 
 **Handoff to M2.2:** derive strict schemas from the contract without a second handwritten OpenAPI source. Detailed credential-container algorithms/parameters are intentionally an M2.10 implementation ADR, and the portable ownership primitive is selected/tested in M2.3. The initial ~40h milestone estimate remains unvalidated: headless credential storage, recovery, and three-OS packaging need implementation evidence before a reliable replacement estimate can be recorded.
 
@@ -334,6 +336,7 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 - [ ] On unregister, show a warning that project files remain on disk, including the directory location and how to register it again. Return structured preservation/warning information through the API so every client can display it; test that unregister never deletes project files and that re-registration preserves identity and history.
 - [ ] Persist one local operator identity and map roster entries to it where appropriate. Validate event attribution server-side; a client cannot supply another operator or engagement identity in an envelope.
 - [ ] Enforce canonical path handling and one owning core per managed project; test symlink/path aliases, traversal attempts, competing opens, stale ownership after a crash, and Windows handle release. Opening an unknown project must not silently create an empty ledger through the current `openLedger()` behavior.
+- [ ] Apply that same exclusive canonical-ledger guard to offline `verify`/`seal`/`log` before any database open. Require the owning core stopped; report `ledger_in_use` with exit 75 on contention. Hold core ownership across inactive registered projects until unregister/shutdown, and test core/CLI contention both ways before the server is introduced.
 
 #### M2.4 — Engagement metadata model
 
@@ -354,7 +357,7 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 
 - [ ] Implement the approved M2.1 matrix as a pure transition policy plus an audited service operation. Return allowed transitions and reasons to clients; keep this logic out of CLI/HTTP handlers.
 - [ ] Preserve no-document creation and the SRS's Draft/Lab runner availability in the future runner contract. Represent Closed as runner-disabled and Closing's persistence/destructive behavior as policy information for M4/M5; do not claim execution enforcement yet.
-- [ ] Persist previous/resume state where required and distinguish operator-declared lifecycle changes from window-derived restrictions. Scheduled scope enforcement remains M5. Closing/Closed must not require nonexistent reports, vaults, or cleanup projections; define hooks for M8/M9.
+- [ ] Persist `resume_state` and `closing_origin` per contract v2; cancellation restores the closing origin, including paused-Draft and paused-Closing detours. Use only the six persisted lifecycle states; Blackout is a separate effective restriction evaluated in M5. Closing/Closed must not require nonexistent reports, vaults, or cleanup projections; define hooks for M8/M9.
 - [ ] Test every allowed and rejected transition, missing prerequisites, reason requirements, no-op/retry behavior, concurrent transitions, and restart/replay. Closing a project and signing a checkpoint remain distinct operations.
 
 #### M2.7 — Project switching and isolation
@@ -385,7 +388,7 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 - [ ] Implement explicit headless authentication mode without a desktop session, Secret Service, or OS-keychain dependency. Use the same authenticated HTTP/WS contract as desktop mode; keychain absence must never silently disable authentication. Keep API authentication separate from M7's engagement encryption and vault keys.
 - [ ] Provide initialization and unlock commands for a passphrase-encrypted local API credential store outside project directories. Generate the API token with cryptographic randomness; protect it using authenticated encryption and a salted password KDF. Record the format/version, algorithm and parameter choices, bounded input/work limits, atomic updates, owner-only directory/file permissions, and tamper/wrong-passphrase behavior in the authentication ADR before implementation.
 - [ ] Accept the unlock passphrase through a hidden terminal prompt for interactive SSH use or a dedicated inherited file descriptor for service-managed startup. Supply the client credential through the same explicit provider boundary. Never pass secrets in argv or persist plaintext credentials; unattended startup requires an external credential provider, not an embedded unlock key. Document how both the core and CLI authenticate, restart, rotate credentials, and recover from a lost passphrase by resetting local API credentials without changing project history.
-- [ ] Test headless initialization, core startup, CLI HTTP access, WS authentication/reconnect, restart/unlock, rotation/revocation, wrong passphrases, malformed/tampered stores, unsafe permissions, missing credential input, and noninteractive failure without hanging for a prompt. Run installed-bundle integration with no desktop/keychain and no external network. Check that prompts, logs, errors, and audit records disclose neither tokens nor passphrases.
+- [ ] Test headless initialization, core startup, CLI HTTP access, WS authentication/reconnect, restart/unlock, rotation/revocation, wrong passphrases, malformed/tampered stores, unsafe permissions, missing credential input, and noninteractive failure without hanging for a prompt. Verify prompt/FD equivalence with no terminator, one LF, or one CRLF, preserved other whitespace, strict UTF-8, and raw/normalized size limits. Run installed-bundle integration with no desktop/keychain and no external network. Check that prompts, logs, errors, and audit records disclose neither tokens nor passphrases.
 
 #### M2.11 — WebSocket events and context notifications
 
@@ -397,7 +400,7 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 
 - [ ] Generate OpenAPI and the M2 payload schema appendix from the Zod contracts; publish WS schemas/protocol documentation alongside them. Add deterministic generation/drift checks and a shared generated TypeScript API client usable by Node and future browser clients (ADR 0003).
 - [ ] Extend `pentrackr` with core startup/status and project create/list/show/update/state/switch/register/unregister/rebuild commands. Support scriptable JSON output, clear exit codes, and schema-validated metadata input without putting tokens in argv.
-- [ ] Make new business commands use the authenticated API. Preserve M1 `verify`/`seal`/`log`/`keygen` compatibility, and define how offline maintenance commands behave when the core owns the same ledger so they cannot race projections or seals.
+- [ ] Make new business commands use the authenticated API. Preserve M1 command compatibility and regression-test M2.3's core-stopped rule for offline `verify`/`seal`/`log`; `keygen` requires no ledger ownership. Test the stop → offline maintenance → restart workflow in installed bundles.
 - [ ] Exercise the generated client and CLI against a real temporary core: create two projects, edit metadata, transition, switch, query both histories, rebuild, stop, restart, and verify. Check help and failure output as well as successful operation.
 
 #### M2.13 — Optional engagement templates

@@ -4,6 +4,8 @@
 **Extends:** [0003](0003-loopback-api.md), API credential storage and handoff only
 **Requirements:** NFR-001, NFR-002, FR-UI-012
 **Plan:** M2.1, M2.10; maintainer decision D28
+**Review amendment:** FD newline handling corrected before implementation at the
+maintainer's request; supersedes the byte-exact input wording at `c4d1c95`.
 
 ## Context
 
@@ -33,10 +35,19 @@ Opening an existing store does not recreate it on corruption or unlock failure.
 Interactive core and CLI processes unlock through a hidden terminal prompt.
 Noninteractive processes use `--auth-passphrase-fd <number>`: the argument is a
 descriptor number, never a secret. A bounded, EOF-terminated UTF-8 byte sequence
-on that descriptor is the exact passphrase; no trimming or newline removal.
-Reject an empty value, more than 1024 bytes, or input not completed within
-30 seconds. Close the descriptor after reading. A terminal prompt uses the same
-encoding/length limit; Return terminates the entry and is not part of it.
+is read from that descriptor. Remove **at most one trailing line ending**:
+one CRLF pair if present, otherwise one LF. Preserve all other bytes, including
+spaces, internal newlines, a lone CR, and additional trailing newlines. Decode
+UTF-8 strictly, without Unicode normalization. A terminal prompt excludes its
+Return terminator, producing the same secret as FD input with or without one
+LF/CRLF terminator. Shell `echo` output therefore matches an interactively set
+passphrase; secrets still must not be literal arguments in service definitions.
+
+Bound the raw FD input to 1026 bytes (1024 plus a possible CRLF). After removing
+the terminator, require 1–1024 UTF-8 bytes. Reject invalid UTF-8 or input not
+completed within 30 seconds. Close the descriptor after reading. Apply the same
+encoding and normalized length limits to terminal input. M2.10 tests unterminated,
+LF, CRLF, preserved spaces, repeated newlines, invalid UTF-8, and size boundaries.
 The descriptor is dedicated to authentication, not ordinary stdin used for
 metadata input, and is never inherited by subsequently launched children.
 
@@ -49,8 +60,8 @@ passphrase next to `auth.enc` is not an unattended-startup solution.
 Core configuration, discovery files, errors, audit records, URLs, logs, and
 project files contain no API token or passphrase. Linux private directories
 and files require owner-only access (0700/0600), expected ownership, and no
-symlink substitution at credential access. Other platforms enforce equivalent
-user access controls; a chmod call alone is not evidence of Windows ACL safety.
+symlink substitution at credential access. Test equivalent owner-only access
+controls on other platforms, including Windows ACLs.
 
 Browser clients will exchange an authenticated HTTP request for a random,
 single-use WS ticket, valid for 30 seconds and bound to the allowed browser

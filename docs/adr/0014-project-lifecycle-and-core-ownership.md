@@ -4,6 +4,8 @@
 **Clarifies:** [0002](0002-sqlite-blob-store.md) and [0003](0003-loopback-api.md)
 **Requirements:** FR-ENG-001, FR-ENG-015, FR-UI-003, FR-SECPL-001; SRS §3.2
 **Plan:** M2.1; maintainer decisions D26–D27, delta Δ9
+**Review amendment:** Records subsequent maintainer confirmation of lifecycle
+rules and the core-stopped offline-maintenance decision before M2.3.
 
 ## Context
 
@@ -53,9 +55,14 @@ requires a new ADR.
 
 Lab identity remains separate from its temporary lifecycle state; closing or
 pausing a lab does not erase its classification. Closed content is edited by
-audited reopening. These are implementation defaults chosen during M2.1, raised
-as questions to the maintainer; they are not attributed as explicit maintainer
-decisions. If revised, record the change before implementing dependent schemas.
+audited reopening. The maintainer confirmed both rules after `c4d1c95`.
+
+Offline `verify`, `seal`, and `log` require the owning core stopped and acquire
+the same exclusive canonical-ledger lock before opening storage. M2.3 implements
+the guard for core and CLI together. Contention reports `ledger_in_use` with
+exit 75. Core ownership spans inactive registered projects until unregister or
+shutdown. This avoids adding an online maintenance API or shared-read lock mode;
+the existing `verify` opens read/write and `log` writes projections.
 
 ## Consequences
 
