@@ -23,3 +23,5 @@ rejected and why.
 | [0011](0011-biome-over-eslint.md) | Biome instead of ESLint and Prettier | Accepted |
 | [0012](0012-hash-preimage-construction.md) | Hash preimage: domain separation, no redundant suffix | Accepted (supersedes part of 0004) |
 | [0013](0013-node-sqlite.md) | Node built-in SQLite instead of better-sqlite3 | Accepted (amends 0001, 0009) |
+| [0014](0014-project-lifecycle-and-core-ownership.md) | Event-owned projects, shared selection, recoverable switching | Accepted (clarifies 0002, 0003) |
+| [0015](0015-headless-api-authentication.md) | Explicit desktop/headless credential providers | Accepted (extends 0003) |

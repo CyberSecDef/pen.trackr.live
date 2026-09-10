@@ -12,6 +12,12 @@
     },
     {
       "path": "./tools/trace"
+    },
+    {
+      "path": "./packages/project"
+    },
+    {
+      "path": "./packages/server"
     }
   ]
 }

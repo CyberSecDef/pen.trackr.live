@@ -84,7 +84,7 @@ pnpm run check      # lint, typecheck, tests with coverage, traceability
 
 Node 22 or newer. No C++ toolchain required on any platform — storage uses Node's built-in SQLite ([ADR 0013](docs/adr/0013-node-sqlite.md)).
 
-412 tests, verified on Linux, Windows, and macOS. See [docs/testing.md](docs/testing.md) for how each platform is covered, including which one is only covered by CI.
+914 tests pass on local Linux as of the M2.2 review; Linux, Windows, and macOS remain the CI gate. See [docs/testing.md](docs/testing.md) for how each platform is covered, including which one is only covered by CI.
 
 ## Architecture
 
@@ -131,6 +131,8 @@ Full detail, including per-milestone exit criteria and honest effort estimates, 
 | [`docs/testing.md`](docs/testing.md) | How each platform is covered, and what CI is better at than a local machine. |
 | `packages/ledger` | Event envelope, CBOR codec, hash chain, checkpoints, store, projections. |
 | `packages/cli` | The `pentrackr` command. |
+| `packages/project` | M2 domain schemas: identity metadata, lifecycle invariants, versioned payloads. |
+| `packages/server` | M2 API/configuration schemas and lossless ledger JSON transport; no HTTP listener yet. |
 | `tools/trace` | Turns `req_spec.md` into a coverage gate. |
 | `LICENSE` | Apache-2.0 |
 
