@@ -1,8 +1,8 @@
 import { envelopeSchema, hashSchema, uuidV7Schema } from '@pentrackr/ledger'
 import { z } from 'zod'
 import { lifecycleSchema } from './lifecycle.js'
-import { reasonSchema, sequenceSchema, transitionCommandSchema } from './primitives.js'
-import { metadataPatchSchema, metadataSchema } from './project.js'
+import { sequenceSchema, storedReasonV1Schema, transitionCommandSchema } from './primitives.js'
+import { metadataSchema, storedMetadataPatchV1Schema } from './project.js'
 
 const operationShape = { operation_id: uuidV7Schema, command_hash: hashSchema }
 
@@ -19,7 +19,7 @@ export const engagementCreatedPayloadV1Schema = z
 
 export const engagementUpdatedPayloadV1Schema = z.strictObject({
   ...operationShape,
-  patch: metadataPatchSchema.refine(
+  patch: storedMetadataPatchV1Schema.refine(
     (value) => Object.keys(value).length > 0,
     'an update event requires a change',
   ),
@@ -31,7 +31,7 @@ export const engagementStateChangedPayloadV1Schema = z
     command: transitionCommandSchema,
     previous: lifecycleSchema,
     next: lifecycleSchema,
-    reason: reasonSchema.nullable(),
+    reason: storedReasonV1Schema.nullable(),
   })
   .superRefine((value, ctx) => {
     if (value.previous.kind !== value.next.kind) {

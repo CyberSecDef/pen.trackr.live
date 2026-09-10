@@ -1,6 +1,6 @@
 # M2 core behavior contract
 
-**Version:** 2 — M2.1 review corrections, 9 September 2026
+**Version:** 3 — M2.2 review corrections, 9 September 2026
 **Implementation status:** Contract only; M2.2–M2.14 implement and test it.
 
 This implementation reference supplements the frozen SRS and [plan](../plan.md).
@@ -17,7 +17,10 @@ The core resolves paths. Data-directory precedence is `--data-dir`,
 | macOS | `$HOME/Library/Application Support/PenTrackr` |
 | Windows | `%LOCALAPPDATA%/PenTrackr` |
 
-Overrides must be absolute; invalid bases fail startup. The directory holds
+Overrides must be absolute on the core's OS; invalid bases fail validation.
+The portable wire schema recognizes POSIX and Windows syntax. M2.3 checks the
+core platform before filesystem access and reports wrong-platform paths as
+400 `invalid_path` with the input field path. The directory holds
 `core.toml`, `registry.db`, optional `auth.enc`, private discovery, and ownership
 metadata. Configuration/discovery exclude secrets. New projects default to
 `<data-dir>/projects`; `--projects-dir` or `PENTRACKR_PROJECTS_DIR` overrides the
@@ -44,8 +47,10 @@ provisioning users. Cached project labels are rebuildable.
 
 ### Create, register, and unregister
 
-- Create accepts immutable `kind: engagement | lab`, a nonblank name, optional
-  metadata, and optional absolute destination. Generate a UUIDv7 in the core;
+- Create accepts immutable `kind: engagement | lab`, required
+  `metadata: { name, client_name?, code_name? }`, and optional absolute destination.
+  All editable creation fields belong inside `metadata`; top-level `name` is
+  rejected. Generate a UUIDv7 in the core;
   use it for the default directory name. Initial state is Draft or Lab by kind.
   Client name and legal artifacts are optional.
 - Explicit destinations must not exist. Validate input first, then create in
@@ -174,8 +179,10 @@ pause the restored state again with a new audited reason.
 ### Persisted-state transition matrix
 
 Unlisted edges return `invalid_transition`. Commands require context/revision
-preconditions and an idempotency key. Required reasons are trimmed, nonblank,
-1–2000 characters. Events carry operation ID, kind, before/after state and both
+preconditions and an idempotency key. The server trims leading/trailing whitespace
+from names and reasons before validation and command hashing. Trimmed names are
+1–200 and required reasons 1–2000 characters. Existing ledger text is read without
+normalization. Events carry operation ID, kind, before/after state and both
 saved fields, reason (nullable), and core-generated attribution/timestamps.
 
 | From | Command → To | Saved-state behavior | Reason |
@@ -252,6 +259,9 @@ Revision is the ledger head hash; every established project has one. Switch
 events advance it. Business writes require quoted-hash `If-Match` and
 `X-PenTrackr-Context: <instance_id>:<generation>`. Registry mutations require
 context/idempotency, with registration conflicts checked serially.
+`If-Match` accepts one quoted lowercase SHA-256 head only. Wildcard `*`, weak
+ETags, and lists fail with 400 `invalid_precondition`; missing headers remain 428
+and a well-formed stale revision remains 412.
 
 Every mutation uses UUIDv7 `Idempotency-Key`, bound to operator, method, route,
 and validated body. Identical completed retries return the original outcome
@@ -273,20 +283,34 @@ internal paths; explicit registration responses may return the project path.
 | 404 | Unknown resource; authenticate before lookup |
 | 409 | Invalid transition, inactive/active-project conflict, stale context, duplicate identity, reused key |
 | 412 / 428 | Stale revision / missing precondition |
-| 413 / 415 | Oversized request / unsupported content type |
+| 413 / 415 | Byte/depth/node limit exceeded / unsupported content type |
 | 422 | Unsupported format/payload version or invalid history |
 | 429 | Connection/request/backpressure limit |
 | 503 | Switch/recovery, unavailable project, ownership/storage failure |
 | 500 | Unexpected failure; sanitized message and request ID |
 
-Body limit: 1 MiB (uploads M3). Pages: default 50, maximum 200. Events sort by
+Request limits are independent and checked in order: enforce the **1 MiB byte
+limit** while receiving the body (413 `request_too_large`), parse JSON (malformed
+syntax: 400), then bound its tree to depth 64 and 20,000 nodes before domain
+schema validation (413 `structure_limit_exceeded`). Either structural limit can
+reject a body below 1 MiB; the byte limit is not a promise to accept every smaller
+body. Ordinary field/type errors remain 400. M2.9 implements this ordering for
+domain-command bodies; client-authored ledger envelopes remain disallowed.
+
+The wire codec applies the same structural bounds to tagged JSON; its custom
+Zod issue identifies `structure_limit_exceeded`. Outbound conversion failures
+are server-side errors, not a 413 blamed on the requester, and must never silently
+truncate an event. Upload streaming belongs to M3.
+
+Pages: default 50, maximum 200. Events sort by
 ascending sequence with exclusive `after_seq`; projects sort by UUID with an
 exclusive ID cursor, without snapshot guarantees across registration changes.
 Unavailable task/finding counts are null with capability indicators. Only
 `/healthz` is public; API/schema/template endpoints require authentication.
 Readiness requires authentication, ownership, and recovery completion.
 
-Bind defaults to `127.0.0.1`; explicit `::1` is supported. Wider binding requires
+Bind defaults to `127.0.0.1`; explicit `::1` and IPv4-mapped loopback within
+`::ffff:127.0.0.0/104` are supported. Wider binding requires
 an explicit address, `--allow-non-loopback`, visible warning, and configuration
 audit before listening. Headless mode uses the same default. Protect bearer
 transport beyond loopback with an operator-managed tunnel; native TLS/agent

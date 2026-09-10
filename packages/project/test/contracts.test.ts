@@ -87,16 +87,20 @@ describe('identity metadata and patch semantics', () => {
   it.each(['', '  ', '\uD800', 'x'.repeat(201)])('rejects invalid names %j', (value) => {
     expect(nameSchema.safeParse(value).success).toBe(false)
   })
-  it('preserves valid names without normalization', () => {
-    expect(nameSchema.parse(' Café ')).toBe(' Café ')
+  it('trims names and reasons before length validation', () => {
+    expect(nameSchema.parse(' Café ')).toBe('Café')
+    expect(reasonSchema.parse(' done ')).toBe('done')
+    expect(nameSchema.parse(` ${'x'.repeat(200)} `)).toHaveLength(200)
+    expect(reasonSchema.parse(` ${'x'.repeat(2000)} `)).toHaveLength(2000)
+    expect(metadataPatchSchema.parse({ name: ' Acme ', client_name: ' Client ' })).toEqual({
+      name: 'Acme',
+      client_name: 'Client',
+    })
     expect(metadataPatchSchema.parse({ name: 'Renamed' })).toEqual({ name: 'Renamed' })
   })
-  it.each(['', '  ', ' reason', 'reason ', '\uDFFF', 'x'.repeat(2001)])(
-    'rejects invalid reasons %j',
-    (value) => {
-      expect(reasonSchema.safeParse(value).success).toBe(false)
-    },
-  )
+  it.each(['', '  ', '\uDFFF', 'x'.repeat(2001)])('rejects invalid reasons %j', (value) => {
+    expect(reasonSchema.safeParse(value).success).toBe(false)
+  })
   it('validates a persisted project and refuses unknown/immutable patch keys', () => {
     const project = {
       format_version: 1,
@@ -119,6 +123,20 @@ describe('versioned domain payloads', () => {
     const parsed = parseProjectEvent(event)
     expect(parsed).toEqual(event)
     expect(encode(parsed)).toEqual(encode(parseEnvelope(event)))
+  })
+  it('preserves version-1 event text and hashes when reading existing history', () => {
+    for (const event of [
+      envelope('engagement.created', {
+        ...operation(),
+        metadata: { ...metadata, name: ' Acme ' },
+        lifecycle: draft,
+      }),
+      envelope('engagement.updated', { ...operation(), patch: { name: ' Acme ' } }),
+    ]) {
+      expect(encode(parseProjectEvent(event))).toEqual(encode(event))
+    }
+    expect(contracts.storedReasonV1Schema.safeParse(' done ').success).toBe(false)
+    expect(contracts.storedNameV1Schema.safeParse('   ').success).toBe(false)
   })
   it('requires an initial Draft or Lab state on creation', () => {
     const created = { ...operation(), metadata, lifecycle: { ...draft, state: 'active' } }

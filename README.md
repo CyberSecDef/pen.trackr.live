@@ -84,7 +84,7 @@ pnpm run check      # lint, typecheck, tests with coverage, traceability
 
 Node 22 or newer. No C++ toolchain required on any platform — storage uses Node's built-in SQLite ([ADR 0013](docs/adr/0013-node-sqlite.md)).
 
-904 tests pass on local Linux as of M2.2; Linux, Windows, and macOS remain the CI gate. See [docs/testing.md](docs/testing.md) for how each platform is covered, including which one is only covered by CI.
+914 tests pass on local Linux as of the M2.2 review; Linux, Windows, and macOS remain the CI gate. See [docs/testing.md](docs/testing.md) for how each platform is covered, including which one is only covered by CI.
 
 ## Architecture
 

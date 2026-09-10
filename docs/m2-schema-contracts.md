@@ -18,7 +18,10 @@ browser client rather than importing these Node packages into a browser.
 The identity metadata floor contains `name`, nullable `client_name`, and nullable
 `code_name`. Persisted metadata requires explicit nulls; update patches preserve
 omitted fields and distinguish them from null clears. Explicit undefined patch
-properties and unknown fields fail validation. M2.4 adds the remaining metadata,
+properties and unknown fields fail validation. Creation groups all three fields
+under `metadata`, with `name` required and the other two optional. The server
+trims name/reason input before length validation and command hashing; stored
+version-1 readers preserve already hashed text. M2.4 adds the remaining metadata,
 including scope, RoE, windows, contacts, roster, and document references; these
 fields are rejected until their schemas exist.
 
@@ -52,7 +55,9 @@ explicit credential provider. Network defaults are loopback, port 0 (OS-selected
 recorded in discovery at startup), and a 5-second switch-hook timeout. Empty
 host/origin lists supply no extra grants; M2.8 derives the bound local endpoint's
 allowlist. Config schema checks do not replace filesystem ownership or Origin
-policy enforcement.
+policy enforcement. `absolutePathSchema` checks portable syntax; M2.3 must reject
+wrong-platform paths with 400 `invalid_path` and a field path before filesystem
+access. IPv4-mapped 127/8 addresses are recognized as loopback.
 
 Tests exercise Zod-to-JSON-Schema conversion for every exported schema. JSON
 Schema expresses structure; Unicode, identity, saved-state, and other custom
@@ -75,8 +80,9 @@ when wiring Fastify and generating OpenAPI/client artifacts.
 ```
 
 The ellipsis above stands for the unchanged M1 fields; it is not a wire field.
-Only the payload representation changes. `fromWireEvent` restores an ordinary
-ledger envelope; `toWireValue`/`fromWireValue` handle individual CBOR values.
+Only the payload representation changes. Internal `fromWireEvent` restores an
+envelope and checks its hash. It is excluded from package exports and must never
+back a request handler. `toWireValue`/`fromWireValue` handle individual CBOR values.
 
 | Ledger value | JSON representation |
 |---|---|
@@ -94,12 +100,19 @@ range are rejected. `__proto__` and `constructor` remain ordinary map keys.
 
 The codec checks cycles, depth (maximum 64), and node count (maximum 20,000)
 before recursive parsing. These limits include tagged JSON structure; enclosing
-event bodies are additionally subject to M2.8's request-size limit. Arrays must
+JSON bodies have an independent 1 MiB byte limit. M2.9 enforces the byte limit
+first (413 `request_too_large`), parses JSON, then applies structural bounds
+(413 `structure_limit_exceeded`) before field validation (400). A body below
+1 MiB can exceed the node budget. Tagged ledger envelopes are response data,
+not accepted mutation bodies; outbound limit failures are server errors.
+Arrays must
 be dense. Map/object identity and Buffer/Uint8Array identity normalize, as does
 negative zero. The invariant is identical canonical CBOR bytes, not JS object
 identity. Property tests exercise actual JSON stringify/parse; envelope tests
 also verify the reconstructed event hash.
 
-Codec validation does not authenticate a hash or checkpoint: use the existing
-ledger verifier for that. Event envelopes, hash preimages, and stored CBOR are
-unchanged by M2.2.
+Outbound conversion validates envelope/CBOR values and packed payload once each,
+without computing discarded CBOR bytes or revalidating the full wire envelope.
+The internal decoder's hash check does not establish authorization, chain
+membership, or checkpoints; use the ledger verifier for the latter guarantees.
+Event envelopes, hash preimages, and stored CBOR are unchanged by M2.2.

@@ -3,18 +3,19 @@ import { z } from 'zod'
 export const textSchema = z.string().refine((value) => value.isWellFormed(), {
   message: 'text must contain well-formed Unicode',
 })
-export const nameSchema = textSchema
+/** Normalize operator input before length validation and command hashing. */
+export const nameSchema = textSchema.trim().min(1).max(200)
+export const reasonSchema = textSchema.trim().min(1).max(2000)
+
+/** Version-1 ledger readers validate without rewriting already hashed text. */
+export const storedNameV1Schema = textSchema
   .min(1)
   .max(200)
-  .refine((value) => value.trim().length > 0, {
-    message: 'name must not be blank',
-  })
-export const reasonSchema = textSchema
+  .refine((value) => value.trim().length > 0, 'name must not be blank')
+export const storedReasonV1Schema = textSchema
   .min(1)
   .max(2000)
-  .refine((value) => value.trim() === value && value.length > 0, {
-    message: 'reason must be nonblank and trimmed',
-  })
+  .refine((value) => value.trim() === value, 'stored reason must already be trimmed')
 export const sequenceSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
 export const projectKindSchema = z.enum(['engagement', 'lab'])
 export const lifecycleStateSchema = z.enum([

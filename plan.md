@@ -1,6 +1,6 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.10
+**Plan version:** 0.11
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
 **Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1 and M2.2 are complete; M2.3 is next. Decision log at §14; milestone progress tracked inline in §6.
 
@@ -14,7 +14,7 @@
 |----|----|
 | Milestones complete | **M0** (rails), **M1** (ledger spine) — 2 of 18 |
 | Requirements closed | **5 of 216** — `FR-SECPL-001`, `FR-SECPL-002`, `NFR-006`, `NFR-009`, `NFR-010` |
-| Tests | **904 in 20 files**, 98.64% statements, 94.78% branches, 100% functions, 98.74% lines |
+| Tests | **914 in 20 files**, 98.65% statements, 94.82% branches, 100% functions, 98.75% lines |
 | Platforms verified | Latest baseline: local Linux. M0/M1: Windows (CI + `baldr`), macOS (CI only) |
 | ADRs | 15; decision history and amendments indexed in `docs/adr/README.md` |
 | Next | **M2.3** — project directories, registry, and local identity |
@@ -332,6 +332,8 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 
 **Validation:** 365 new tests (including 240 lifecycle combinations and a 500-run nested-value property test); **904 tests in 20 files total**. Lint, typecheck, coverage thresholds, traceability, workspace build, and compiled package export smoke checks pass on local Linux/Node 22.22.1. Hygiene passes outside the sandbox after its Git subprocess was blocked. Coverage is 98.64% statements, 94.78% branches, 100% functions, 98.74% lines. No additional requirement is claimed complete; Windows/macOS verification remains the CI gate.
 
+**Review of `25fa071`:** Internal wire-envelope decoding now verifies the event hash and is excluded from package exports. Outbound conversion skips discarded CBOR encoding and duplicate full-envelope validation. Name/reason inputs are trimmed before validation; version-1 event readers preserve hashed text. Creation consistently uses `metadata: { name, client_name?, code_name? }`. Structural budgets map to 413 independently of the byte limit; If-Match requires a concrete head. IPv4-mapped loopback is recognized, and M2.3 owns platform-specific path validation before filesystem access. Literal unavailable capabilities are retained. The integer guard was replaced with a Zod pipeline: a local reproduction confirmed that `.refine` can run after regex failure, so simply deleting the guard would permit a BigInt conversion exception. Full local `pnpm run check` passes: **914 tests**, 98.65% statements, 94.82% branches, 100% functions, 98.75% lines. PR/merge of M2.1–M2.2 is explicitly authorized by the maintainer; M2 remains in progress.
+
 **Handoff:** M2.3 implements ownership and project storage. M2.4 expands identity metadata into the full engagement model; M2.5 adds mutations/replay; M2.6 enforces transition edges. Fastify startup, auth, scope/template/WS resource schemas, and generated client wiring remain in their scheduled phases. Zod refinements enforce semantics beyond structural JSON Schema; route integration must retain them. Existing ledger bytes, envelope/hash rules, and CLI commands are unchanged.
 
 #### M2.3 — Project directories, registry, and local identity
@@ -341,7 +343,7 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 - [ ] Implement register/list/open/unregister according to M2.1, including moved/missing directories and conflicting registrations. Rebuild cached list metadata from each registered project's ledger; keep local path registration separate from portable engagement truth.
 - [ ] On unregister, show a warning that project files remain on disk, including the directory location and how to register it again. Return structured preservation/warning information through the API so every client can display it; test that unregister never deletes project files and that re-registration preserves identity and history.
 - [ ] Persist one local operator identity and map roster entries to it where appropriate. Validate event attribution server-side; a client cannot supply another operator or engagement identity in an envelope.
-- [ ] Enforce canonical path handling and one owning core per managed project; test symlink/path aliases, traversal attempts, competing opens, stale ownership after a crash, and Windows handle release. Opening an unknown project must not silently create an empty ledger through the current `openLedger()` behavior.
+- [ ] Validate paths against the core OS before filesystem access (wrong-platform path: 400 `invalid_path` with a field path). Enforce canonical path handling and one owning core per managed project; test symlink/path aliases, traversal attempts, competing opens, stale ownership after a crash, and Windows handle release. Opening an unknown project must not silently create an empty ledger through the current `openLedger()` behavior.
 - [ ] Apply that same exclusive canonical-ledger guard to offline `verify`/`seal`/`log` before any database open. Require the owning core stopped; report `ledger_in_use` with exit 75 on contention. Hold core ownership across inactive registered projects until unregister/shutdown, and test core/CLI contention both ways before the server is introduced.
 
 #### M2.4 — Engagement metadata model
@@ -384,7 +386,7 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 - [ ] Implement versioned routes for project create/register/list/get/update/unregister, state transitions, active-context read/switch, metadata/scope queries, projection rebuild, and paginated ledger reads. Final route spellings and CLI names come from the M2.1 contract.
 - [ ] Return project list name, client, state/mode, and window; report findings/task counts as unavailable until those projections exist instead of inventing zero counts. Define deterministic sorting and bounded pagination.
 - [ ] Generate event IDs, timestamps, timezone fields, and operator attribution in the core. Accept domain commands, not arbitrary client-authored ledger envelopes; validate path/body identity agreement and revision preconditions.
-- [ ] Standardize validation, authentication, not-found, conflict, unavailable-project, unsupported-version, and internal-error responses. Test requests through Fastify injection and a real loopback listener, including malformed bodies and methods that must not mutate state.
+- [ ] Standardize validation, authentication, not-found, conflict, unavailable-project, unsupported-version, and internal-error responses. Apply byte limits first (413), parse JSON (400 on syntax errors), then structural depth/node budgets (413), then domain validation (400), as defined in contract v3. Test requests through Fastify injection and a real loopback listener, including malformed bodies and methods that must not mutate state.
 
 #### M2.10 — Authentication and credential lifecycle
 

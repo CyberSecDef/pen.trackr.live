@@ -31,40 +31,44 @@ const config = {
 }
 
 describe('requests and concurrency', () => {
-  it('creates a Lab without legal metadata, destination, or client', () => {
-    expect(schemas.createProjectRequestSchema.parse({ name: 'Practice', kind: 'lab' })).toEqual({
-      name: 'Practice',
+  it('groups all creation fields under metadata, with no legal prerequisites', () => {
+    expect(
+      schemas.createProjectRequestSchema.parse({ kind: 'lab', metadata: { name: ' Practice ' } }),
+    ).toEqual({
       kind: 'lab',
+      metadata: { name: 'Practice' },
     })
     expect(
-      schemas.createProjectRequestSchema.safeParse({
+      schemas.createProjectRequestSchema.parse({
         kind: 'engagement',
-        name: 'Test',
-        metadata: { client_name: null },
-      }).success,
-    ).toBe(true)
+        metadata: { name: ' Test ', client_name: ' Acme ', code_name: null },
+      }),
+    ).toEqual({
+      kind: 'engagement',
+      metadata: { name: 'Test', client_name: 'Acme', code_name: null },
+    })
   })
-  it.each(['engagement_id', 'operator_id', 'state', 'revision', 'legal_approved', 'extra'])(
-    'refuses client-authored %s on creation',
+  it.each(['engagement_id', 'operator_id', 'state', 'revision', 'legal_approved', 'extra', 'name'])(
+    'refuses client-authored top-level %s on creation',
     (key) => {
       expect(
-        schemas.createProjectRequestSchema.safeParse({ name: 'Test', kind: 'lab', [key]: true })
-          .success,
+        schemas.createProjectRequestSchema.safeParse({
+          kind: 'lab',
+          metadata: { name: 'Test' },
+          [key]: true,
+        }).success,
       ).toBe(false)
     },
   )
-  it('refuses unknown nested metadata and null nonnullable values', () => {
-    expect(
-      schemas.createProjectRequestSchema.safeParse({
-        name: 'Test',
-        kind: 'lab',
-        metadata: { unknown: true },
-      }).success,
-    ).toBe(false)
-    expect(
-      schemas.createProjectRequestSchema.safeParse({ name: 'Test', kind: 'lab', destination: null })
-        .success,
-    ).toBe(false)
+  it('rejects the old creation shape and invalid nested metadata', () => {
+    for (const value of [
+      { name: 'Old shape', kind: 'lab' },
+      { kind: 'lab' },
+      { kind: 'lab', metadata: {} },
+      { kind: 'lab', metadata: { name: 'Test', unknown: true } },
+      { kind: 'lab', metadata: { name: 'Test' }, destination: null },
+    ])
+      expect(schemas.createProjectRequestSchema.safeParse(value).success).toBe(false)
   })
   it('distinguishes patch omission, clearing, and empty/no-op patches', () => {
     expect(schemas.updateProjectRequestSchema.parse({})).toEqual({})
@@ -105,6 +109,10 @@ describe('requests and concurrency', () => {
     ).toBe(false)
   })
   it('requires reasons except for activate, and rejects Blackout as a command', () => {
+    expect(schemas.transitionRequestSchema.parse({ command: 'close', reason: ' done ' })).toEqual({
+      command: 'close',
+      reason: 'done',
+    })
     expect(
       schemas.transitionRequestSchema.safeParse({ command: 'activate', reason: null }).success,
     ).toBe(true)
@@ -293,22 +301,32 @@ describe('core configuration', () => {
       expect(schemas.absolutePathSchema.safeParse(value).success).toBe(false)
     },
   )
-  it.each(['127.0.0.1', '127.9.8.7', '::1', '0:0:0:0:0:0:0:1'])(
-    'recognizes loopback %s',
-    (bind_address) => {
-      expect(schemas.coreConfigSchema.safeParse({ ...config, bind_address }).success).toBe(true)
-    },
-  )
-  it.each(['0.0.0.0', '::', '10.0.0.1'])(
-    'requires explicit wider-bind opt-in for %s',
-    (bind_address) => {
-      expect(schemas.coreConfigSchema.safeParse({ ...config, bind_address }).success).toBe(false)
-      expect(
-        schemas.coreConfigSchema.safeParse({ ...config, bind_address, allow_non_loopback: true })
-          .success,
-      ).toBe(true)
-    },
-  )
+  it.each([
+    '127.0.0.1',
+    '127.9.8.7',
+    '::1',
+    '0:0:0:0:0:0:0:1',
+    '::ffff:127.0.0.1',
+    '::ffff:127.255.255.255',
+    '::ffff:7f00:1',
+    '0:0:0:0:0:ffff:7f00:1',
+  ])('recognizes loopback %s', (bind_address) => {
+    expect(schemas.coreConfigSchema.safeParse({ ...config, bind_address }).success).toBe(true)
+  })
+  it.each([
+    '0.0.0.0',
+    '::',
+    '10.0.0.1',
+    '::ffff:126.255.255.255',
+    '::ffff:128.0.0.1',
+    '::ffff:10.0.0.1',
+  ])('requires explicit wider-bind opt-in for %s', (bind_address) => {
+    expect(schemas.coreConfigSchema.safeParse({ ...config, bind_address }).success).toBe(false)
+    expect(
+      schemas.coreConfigSchema.safeParse({ ...config, bind_address, allow_non_loopback: true })
+        .success,
+    ).toBe(true)
+  })
   it('rejects invalid network fields, wildcards, unsafe origins and secret config fields', () => {
     for (const patch of [
       { bind_address: 'localhost' },

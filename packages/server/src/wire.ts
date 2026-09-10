@@ -1,9 +1,10 @@
 import {
   type CborValue,
+  collectEncodingIssues,
   type Envelope,
-  encode,
   envelopeSchema,
   parseEnvelope,
+  verifyEvent,
 } from '@pentrackr/ledger'
 import { sequenceSchema, textSchema } from '@pentrackr/project'
 import { z } from 'zod'
@@ -23,11 +24,14 @@ const integerTextSchema = z
   .string()
   .max(21)
   .regex(/^(?:0|-?[1-9][0-9]*)$/)
-  .refine((value) => {
-    if (value.length > 21 || !/^(?:0|-?[1-9][0-9]*)$/.test(value)) return false
-    const n = BigInt(value)
-    return n >= -(2n ** 64n) && n <= 2n ** 64n - 1n
-  }, 'integer outside CBOR range')
+  .pipe(
+    z.string().refine((value) => {
+      const n = BigInt(value)
+      return n >= -(2n ** 64n) && n <= 2n ** 64n - 1n
+    }, 'integer outside CBOR range'),
+  )
+
+class WireLimitError extends Error {}
 
 // Bound traversal before either Zod or the CBOR encoder recurses. Shared values
 // are legal; cycles and unsupported object instances are not.
@@ -38,7 +42,7 @@ function checkTree(
   budget = { nodes: 0 },
 ): void {
   if (depth > 64 || ++budget.nodes > 20_000)
-    throw new Error('wire value exceeds depth or node limit')
+    throw new WireLimitError('wire value exceeds depth or node limit')
   if (value === null || typeof value !== 'object') return
   if (value instanceof Uint8Array) return
   if (active.has(value)) throw new Error('cyclic wire value')
@@ -103,7 +107,13 @@ export const wireValueSchema = z
     try {
       checkTree(value)
     } catch (error) {
-      ctx.addIssue({ code: 'custom', message: (error as Error).message })
+      ctx.addIssue({
+        code: 'custom',
+        message: (error as Error).message,
+        params: {
+          code: error instanceof WireLimitError ? 'structure_limit_exceeded' : 'invalid_wire_value',
+        },
+      })
     }
   })
   .pipe(recursiveWireSchema)
@@ -130,7 +140,15 @@ function pack(value: CborValue): WireValue {
 /** Map/object and Buffer/Uint8Array identity is normalized; CBOR bytes are preserved. */
 export function toWireValue(value: CborValue): WireValue {
   checkTree(value)
-  encode(value)
+  const issues = collectEncodingIssues(value)
+  if (issues.length > 0)
+    throw new z.ZodError(
+      issues.map((issue) => ({
+        code: 'custom',
+        path: [...issue.path],
+        message: issue.message,
+      })),
+    )
   return wireValueSchema.parse(pack(value))
 }
 
@@ -169,17 +187,24 @@ export type WireEvent = z.infer<typeof wireEventSchema>
 export function toWireEvent(seq: number, envelope: Envelope): WireEvent {
   checkTree(envelope)
   const parsed = parseEnvelope(envelope)
-  return wireEventSchema.parse({
+  // parseEnvelope already validated the CBOR payload. Validate its packed
+  // representation once, then construct the DTO from those validated parts.
+  return {
     wire_version: 1,
-    seq,
-    envelope: { ...parsed, payload: toWireValue(parsed.payload) },
-  })
+    seq: sequenceSchema.min(1).parse(seq),
+    envelope: { ...parsed, payload: wireEnvelopeSchema.shape.payload.parse(pack(parsed.payload)) },
+  }
 }
 
+/**
+ * @internal For trusted response consumers and codec verification only.
+ * Must never back a request handler: mutations accept domain commands, not
+ * client-authored envelopes. Hash verification is not authorization or proof
+ * of chain membership; a sender can recompute a self-consistent event hash.
+ */
 export function fromWireEvent(value: unknown): { seq: number; envelope: Envelope } {
   const wire = wireEventSchema.parse(value)
-  return {
-    seq: wire.seq,
-    envelope: parseEnvelope({ ...wire.envelope, payload: fromWireValue(wire.envelope.payload) }),
-  }
+  const envelope = parseEnvelope({ ...wire.envelope, payload: unpack(wire.envelope.payload) })
+  if (!verifyEvent(envelope)) throw new Error('wire event hash mismatch')
+  return { seq: wire.seq, envelope }
 }

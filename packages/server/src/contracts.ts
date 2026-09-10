@@ -1,8 +1,8 @@
 import { hashSchema, uuidV7Schema } from '@pentrackr/ledger'
 import {
   lifecycleSchema,
+  metadataInputSchema,
   metadataPatchSchema,
-  nameSchema,
   projectKindSchema,
   projectSchema,
   reasonSchema,
@@ -35,13 +35,7 @@ export const mutationPreconditionsSchema = registryPreconditionsSchema.extend({
 })
 export const createProjectRequestSchema = z.strictObject({
   kind: projectKindSchema,
-  name: nameSchema,
-  metadata: z
-    .strictObject({
-      client_name: nameSchema.nullable().optional(),
-      code_name: nameSchema.nullable().optional(),
-    })
-    .optional(),
+  metadata: metadataInputSchema.partial({ client_name: true, code_name: true }),
   destination: absolutePathSchema.optional(),
 })
 export const registerProjectRequestSchema = z.strictObject({ directory: absolutePathSchema })
@@ -96,6 +90,7 @@ export const projectListItemSchema = z
     ]),
     error_code: textSchema.min(1).nullable(),
     project: projectSchema.nullable(),
+    // Unbuilt capabilities use literal null/false; M8 must deliberately change the schema.
     unread_findings: z.null(),
     unread_tasks: z.null(),
     capabilities: z.strictObject({

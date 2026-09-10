@@ -1,7 +1,9 @@
+import * as ledger from '@pentrackr/ledger'
 import { type CborValue, encode, sealEvent, uuidV7, verifyEvent } from '@pentrackr/ledger'
 import fc from 'fast-check'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
+import * as server from '../src/index.js'
 import {
   fromWireEvent,
   fromWireValue,
@@ -88,6 +90,45 @@ describe('lossless JSON ledger transport', () => {
     expect(restored.seq).toBe(12)
     expect(encode(restored.envelope)).toEqual(encode(original))
     expect(verifyEvent(restored.envelope)).toBe(true)
+  })
+  it('keeps envelope decoding internal and refuses a modified hash or payload', () => {
+    expect(Object.hasOwn(server, 'fromWireEvent')).toBe(false)
+    const original = event({ note: 'original' })
+    const wire = toWireEvent(1, original)
+    expect(() =>
+      fromWireEvent({ ...wire, envelope: { ...wire.envelope, this_hash: '0'.repeat(64) } }),
+    ).toThrow(/hash mismatch/)
+    expect(() =>
+      fromWireEvent({
+        ...wire,
+        envelope: { ...wire.envelope, payload: ['map', [['note', 'modified']]] },
+      }),
+    ).toThrow(/hash mismatch/)
+  })
+  it('does not CBOR-encode values or a 200-event page during outbound conversion', () => {
+    const events = Array.from({ length: 200 }, () => event({ data: [1, 2, 3], big: 2n ** 63n }))
+    const encoder = vi.spyOn(ledger, 'encode')
+    try {
+      toWireValue({ data: [1, 2, 3] })
+      const page = events.map((value, index) => toWireEvent(index + 1, value))
+      expect(page).toHaveLength(200)
+      expect(encoder).not.toHaveBeenCalled()
+    } finally {
+      encoder.mockRestore()
+    }
+  })
+  it('marks structural budget errors separately from malformed wire values', () => {
+    // Under 1 MiB but over the node budget: the structural limit still applies.
+    const body = ['array', Array(20_001).fill(1)]
+    expect(Buffer.byteLength(JSON.stringify(body))).toBeLessThan(1024 * 1024)
+    const result = wireValueSchema.safeParse(body)
+    expect(result.success).toBe(false)
+    if (!result.success)
+      expect(result.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'custom', params: { code: 'structure_limit_exceeded' } }),
+        ]),
+      )
   })
   it('preserves arbitrary nested CBOR values through real JSON', () => {
     const primitive = fc.oneof(

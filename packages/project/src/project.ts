@@ -1,16 +1,22 @@
 import { hashSchema, uuidV7Schema } from '@pentrackr/ledger'
 import { z } from 'zod'
 import { lifecycleSchema } from './lifecycle.js'
-import { nameSchema } from './primitives.js'
+import { nameSchema, storedNameV1Schema } from './primitives.js'
 
 /** Identity metadata floor; M2.4 adds the remaining engagement metadata. */
 export const metadataSchema = z.strictObject({
+  name: storedNameV1Schema,
+  client_name: storedNameV1Schema.nullable(),
+  code_name: storedNameV1Schema.nullable(),
+})
+
+export const metadataInputSchema = z.strictObject({
   name: nameSchema,
   client_name: nameSchema.nullable(),
   code_name: nameSchema.nullable(),
 })
 
-export const metadataPatchSchema = metadataSchema.partial().superRefine((patch, ctx) => {
+function rejectUndefined(patch: Record<string, unknown>, ctx: z.RefinementCtx): void {
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined)
       ctx.addIssue({
@@ -19,7 +25,10 @@ export const metadataPatchSchema = metadataSchema.partial().superRefine((patch, 
         message: 'omit unchanged fields; use null to clear nullable fields',
       })
   }
-})
+}
+
+export const metadataPatchSchema = metadataInputSchema.partial().superRefine(rejectUndefined)
+export const storedMetadataPatchV1Schema = metadataSchema.partial().superRefine(rejectUndefined)
 
 export const projectSchema = z.strictObject({
   format_version: z.literal(1),
