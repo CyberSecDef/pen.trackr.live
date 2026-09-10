@@ -1,23 +1,23 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.9
+**Plan version:** 0.10
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1 behavior contracts are complete and M2.2 is next. Decision log at §14; milestone progress tracked inline in §6.
+**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1 and M2.2 are complete; M2.3 is next. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
 
 ## 0. Where this stands
 
-*Updated 9 September 2026, after M2.1 review; latest local test baseline below.*
+*Updated 9 September 2026, after M2.2; latest local test baseline below.*
 
 | | |
 |----|----|
 | Milestones complete | **M0** (rails), **M1** (ledger spine) — 2 of 18 |
 | Requirements closed | **5 of 216** — `FR-SECPL-001`, `FR-SECPL-002`, `NFR-006`, `NFR-009`, `NFR-010` |
-| Tests | **539 in 17 files**, 98.35% statements, 93.39% branches, 100% functions, 98.47% lines |
+| Tests | **904 in 20 files**, 98.64% statements, 94.78% branches, 100% functions, 98.74% lines |
 | Platforms verified | Latest baseline: local Linux. M0/M1: Windows (CI + `baldr`), macOS (CI only) |
 | ADRs | 15; decision history and amendments indexed in `docs/adr/README.md` |
-| Next | **M2.2** — package boundaries and schemas; M2.1 contracts completed 9 September 2026 |
+| Next | **M2.3** — project directories, registry, and local identity |
 
 **What a reader should take from that:** the tamper-evidence layer is real and tested, and nothing else exists yet. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine, and none of them produce anything visible. The first milestone that feels like a product is M6.
 
@@ -278,7 +278,7 @@ Project rails: toolchain, CI, packaging, traceability, and the decision record.
 
 ### M2 — Projects, states, core API (M, ~40h)
 
-**Status: in progress; M2.1 complete, M2.2 next (9 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
+**Status: in progress; M2.1–M2.2 complete, M2.3 next (9 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
 
 The original ~40h estimate predates this breakdown. Retain it as the original estimate, not a commitment; re-estimate after M2.1 resolves the lifecycle and authentication choices. Work through the phases below in order, with tests alongside each implementation and one commit per phase (D18). Unchecked boxes are remaining work; resolving the planning questions does not mark their implementation complete.
 
@@ -322,11 +322,17 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 
 **Handoff to M2.2:** derive strict schemas from the contract without a second handwritten OpenAPI source. Detailed credential-container algorithms/parameters are intentionally an M2.10 implementation ADR, and the portable ownership primitive is selected/tested in M2.3. The initial ~40h milestone estimate remains unvalidated: headless credential storage, recovery, and three-OS packaging need implementation evidence before a reliable replacement estimate can be recorded.
 
-#### M2.2 — Establish package boundaries and contracts
+#### M2.2 — Establish package boundaries and contracts — ✅ COMPLETE
 
-- [ ] Add a project/domain workspace package and `packages/server`; wire TypeScript references, package exports, build order, test discovery, and runtime dependencies. Keep project/state rules independent of Fastify and clients; reuse `@pentrackr/ledger`.
-- [ ] Define strict Zod request, response, event-payload, and configuration schemas with explicit versioning. Reject unknown fields and distinguish omitted patch fields from explicit clearing. Use named payload versions without changing M1 envelope/hash semantics.
-- [ ] Define the JSON representation of ledger values that JSON cannot represent directly, including CBOR byte strings and big integers. Test lossless wire round-trips without changing the authoritative CBOR or its hashes.
+- [x] Add a project/domain workspace package and `packages/server`; wire TypeScript references, package exports, build order, test discovery, and runtime dependencies. Keep project/state rules independent of Fastify and clients; reuse `@pentrackr/ledger`.
+- [x] Define strict Zod request, response, event-payload, and configuration schemas with explicit versioning. Reject unknown fields and distinguish omitted patch fields from explicit clearing. Use named payload versions without changing M1 envelope/hash semantics.
+- [x] Define the JSON representation of ledger values that JSON cannot represent directly, including CBOR byte strings and big integers. Test lossless wire round-trips without changing the authoritative CBOR or its hashes.
+
+**Results:** Added `@pentrackr/project` and `@pentrackr/server`, TypeScript references, package exports, and lockfile links using the existing cached Zod dependency. Strict schemas cover the identity metadata floor, all persisted lifecycle invariants, four versioned engagement/switch payloads, API inputs/outputs, and core configuration. A tagged JSON codec preserves CBOR byte strings, big integers, map keys, and event hashes. [Schema and transport reference](docs/m2-schema-contracts.md) records the wire format and implementation boundary.
+
+**Validation:** 365 new tests (including 240 lifecycle combinations and a 500-run nested-value property test); **904 tests in 20 files total**. Lint, typecheck, coverage thresholds, traceability, workspace build, and compiled package export smoke checks pass on local Linux/Node 22.22.1. Hygiene passes outside the sandbox after its Git subprocess was blocked. Coverage is 98.64% statements, 94.78% branches, 100% functions, 98.74% lines. No additional requirement is claimed complete; Windows/macOS verification remains the CI gate.
+
+**Handoff:** M2.3 implements ownership and project storage. M2.4 expands identity metadata into the full engagement model; M2.5 adds mutations/replay; M2.6 enforces transition edges. Fastify startup, auth, scope/template/WS resource schemas, and generated client wiring remain in their scheduled phases. Zod refinements enforce semantics beyond structural JSON Schema; route integration must retain them. Existing ledger bytes, envelope/hash rules, and CLI commands are unchanged.
 
 #### M2.3 — Project directories, registry, and local identity
 

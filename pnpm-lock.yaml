@@ -42,6 +42,27 @@ importers:
         specifier: ^4.5.4
         version: 4.5.4
 
+  packages/project:
+    dependencies:
+      '@pentrackr/ledger':
+        specifier: workspace:*
+        version: link:../ledger
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
+
+  packages/server:
+    dependencies:
+      '@pentrackr/ledger':
+        specifier: workspace:*
+        version: link:../ledger
+      '@pentrackr/project':
+        specifier: workspace:*
+        version: link:../project
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
+
   tools/hygiene: {}
 
   tools/trace: {}
