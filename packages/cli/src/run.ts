@@ -1,5 +1,7 @@
 import {
   generateSigningKeyPair,
+  LedgerOwnership,
+  LedgerOwnershipError,
   type LedgerStore,
   openLedger as openLedgerDefault,
   ProjectionRunner,
@@ -43,6 +45,7 @@ const defaults: RunDeps = { openLedger: openLedgerDefault, env: process.env }
 
 const EX_USAGE = 64
 const EX_DATAERR = 65
+const EX_TEMPFAIL = 75
 
 /** Raised for a malformed invocation; converted to EX_USAGE at the boundary. */
 class UsageError extends Error {}
@@ -84,9 +87,25 @@ function withLedger(
   }
 
   let store: LedgerStore
+  let ownership: LedgerOwnership
+  try {
+    ownership = LedgerOwnership.acquire(path)
+  } catch (error) {
+    if (error instanceof LedgerOwnershipError) {
+      return {
+        stdout: `pentrackr: ${error.message}`,
+        exitCode: error.code === 'ledger_in_use' ? EX_TEMPFAIL : EX_DATAERR,
+      }
+    }
+    return {
+      stdout: `pentrackr: cannot open ledger: ${(error as Error).message}`,
+      exitCode: EX_DATAERR,
+    }
+  }
   try {
     store = deps.openLedger(path)
   } catch (error) {
+    ownership.close()
     return {
       stdout: `pentrackr: cannot open ledger: ${(error as Error).message}`,
       exitCode: EX_DATAERR,
@@ -96,7 +115,11 @@ function withLedger(
   try {
     return body(store)
   } finally {
-    store.close()
+    try {
+      store.close()
+    } finally {
+      ownership.close()
+    }
   }
 }
 

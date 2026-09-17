@@ -2,7 +2,12 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { generateSigningKeyPair, type LedgerStore, openLedger } from '@pentrackr/ledger'
+import {
+  generateSigningKeyPair,
+  LedgerOwnership,
+  type LedgerStore,
+  openLedger,
+} from '@pentrackr/ledger'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { run, USAGE } from '../src/run.js'
 import { buildInfo, formatVersion } from '../src/version.js'
@@ -111,6 +116,19 @@ describe('ledger commands', () => {
   })
 
   describe('verify', () => {
+    it.each(['verify', 'log', 'seal'])(
+      'reports ledger_in_use for %s before opening storage',
+      (command) => {
+        const lock = LedgerOwnership.acquire(path)
+        try {
+          const result = run([command, path], deps({ PENTRACKR_SIGNING_KEY: keys.privateKey }))
+          expect(result.exitCode).toBe(75)
+          expect(result.stdout).toContain('ledger_in_use')
+        } finally {
+          lock.close()
+        }
+      },
+    )
     it('reports an empty ledger as ok', () => {
       store.close()
       const result = run(['verify', path], deps())

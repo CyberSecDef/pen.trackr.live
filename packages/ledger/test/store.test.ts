@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { encode } from '../src/cbor.js'
 import type { UnhashedEnvelope } from '../src/envelope.js'
-import { type LedgerStore, LedgerStoreError, openLedger } from '../src/store.js'
+import { type LedgerStore, LedgerStoreError, openLedger, openLedgerReadOnly } from '../src/store.js'
 import { uuidV7 } from '../src/uuid.js'
 
 /**
@@ -299,6 +299,35 @@ describe('LedgerStore', () => {
     it('returns null for metadata that was never set', () => {
       expect(store.meta('absent')).toBeNull()
     })
+  })
+})
+
+describe('read-only inspection', () => {
+  it('does not create a missing ledger', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pentrackr-readonly-'))
+    try {
+      const file = join(root, 'missing.db')
+      expect(() => openLedgerReadOnly(file)).toThrow()
+      expect(existsSync(file)).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('verifies an existing ledger without changing its head', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pentrackr-readonly-'))
+    try {
+      const file = join(root, 'ledger.db')
+      const writer = openLedger(file)
+      const created = writer.append(event())
+      writer.close()
+      const reader = openLedgerReadOnly(file)
+      expect(reader.verify().ok).toBe(true)
+      expect(reader.head()?.this_hash).toBe(created.this_hash)
+      reader.close()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
