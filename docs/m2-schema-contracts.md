@@ -28,6 +28,9 @@ fields are rejected until their schemas exist.
 M2.3 may persist these version-1 events. M2.4 must retain their readers when
 adding metadata: required payload changes need a new version and explicit
 projection defaults for older events, rather than redefining version 1.
+The version-2 metadata schemas and defaults are documented in
+[M2.4 metadata contracts](m2-metadata.md). M2.5 supplies their durable writer
+and replay path; M2.3 storage still rejects rich creation requests.
 
 The persisted lifecycle schema validates kind, state, `resume_state`, and
 `closing_origin` together. All 240 combinations of the defined enums/nulls are

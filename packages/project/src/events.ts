@@ -1,6 +1,7 @@
 import { envelopeSchema, hashSchema, uuidV7Schema } from '@pentrackr/ledger'
 import { z } from 'zod'
 import { lifecycleSchema } from './lifecycle.js'
+import { metadataV2Schema, storedMetadataV2PatchSchema } from './metadata-v2.js'
 import { sequenceSchema, storedReasonV1Schema, transitionCommandSchema } from './primitives.js'
 import { metadataSchema, storedMetadataPatchV1Schema } from './project.js'
 
@@ -20,6 +21,24 @@ export const engagementCreatedPayloadV1Schema = z
 export const engagementUpdatedPayloadV1Schema = z.strictObject({
   ...operationShape,
   patch: storedMetadataPatchV1Schema.refine(
+    (value) => Object.keys(value).length > 0,
+    'an update event requires a change',
+  ),
+})
+
+export const engagementCreatedPayloadV2Schema = z
+  .strictObject({
+    ...operationShape,
+    metadata: metadataV2Schema,
+    lifecycle: lifecycleSchema,
+  })
+  .refine((value) => value.lifecycle.state === (value.lifecycle.kind === 'lab' ? 'lab' : 'draft'), {
+    path: ['lifecycle', 'state'],
+    message: 'a project starts in Draft or Lab',
+  })
+export const engagementUpdatedPayloadV2Schema = z.strictObject({
+  ...operationShape,
+  patch: storedMetadataV2PatchSchema.refine(
     (value) => Object.keys(value).length > 0,
     'an update event requires a change',
   ),
@@ -56,7 +75,7 @@ export const projectSwitchedPayloadV1Schema = z
 
 const base = envelopeSchema.omit({ payload: true, type: true, schema_version: true })
 export const projectEventSchema = z
-  .discriminatedUnion('type', [
+  .union([
     base.extend({
       type: z.literal('engagement.created'),
       schema_version: z.literal(1),
@@ -66,6 +85,16 @@ export const projectEventSchema = z
       type: z.literal('engagement.updated'),
       schema_version: z.literal(1),
       payload: engagementUpdatedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('engagement.created'),
+      schema_version: z.literal(2),
+      payload: engagementCreatedPayloadV2Schema,
+    }),
+    base.extend({
+      type: z.literal('engagement.updated'),
+      schema_version: z.literal(2),
+      payload: engagementUpdatedPayloadV2Schema,
     }),
     base.extend({
       type: z.literal('engagement.state-changed'),

@@ -2,7 +2,7 @@
 
 **Plan version:** 0.12
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1–M2.3 are complete; M2.4 is next. Decision log at §14; milestone progress tracked inline in §6.
+**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1–M2.4 are complete; M2.5 is next. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
 
@@ -14,10 +14,10 @@
 |----|----|
 | Milestones complete | **M0** (rails), **M1** (ledger spine) — 2 of 18 |
 | Requirements closed | **5 of 216** — `FR-SECPL-001`, `FR-SECPL-002`, `NFR-006`, `NFR-009`, `NFR-010` |
-| Tests | **944** on local Linux; **938 passed / 6 skipped** on `baldr` Windows; three-OS CI passes |
-| Platforms verified | M2.3: local Linux, `baldr` Windows, and Ubuntu/Windows/macOS CI |
+| Tests | **953** on local Linux; M2.4 three-OS CI passes |
+| Platforms verified | M2.4: local Linux and Ubuntu/Windows/macOS CI; M2.3 additionally verified on `baldr` Windows |
 | ADRs | 15; decision history and amendments indexed in `docs/adr/README.md` |
-| Next | **M2.4** — engagement metadata model |
+| Next | **M2.5** — event-backed mutations and projections |
 
 **What a reader should take from that:** the tamper-evidence layer and local project storage are real and tested; the HTTP service and graphical client are still ahead. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine. The first milestone that feels like a product is M6.
 
@@ -278,7 +278,7 @@ Project rails: toolchain, CI, packaging, traceability, and the decision record.
 
 ### M2 — Projects, states, core API (M, ~40h)
 
-**Status: in progress; M2.1–M2.3 complete, M2.4 next (17 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
+**Status: in progress; M2.1–M2.4 complete, M2.5 next (17 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
 
 The original ~40h estimate predates this breakdown. Retain it as the original estimate, not a commitment; re-estimate after M2.1 resolves the lifecycle and authentication choices. Work through the phases below in order, with tests alongside each implementation and one commit per phase (D18). Unchecked boxes are remaining work; resolving the planning questions does not mark their implementation complete.
 
@@ -358,13 +358,25 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 - [x] Validate paths against the core OS before filesystem access (`invalid_path` with a field path; M2.9 maps it to HTTP 400). Enforce canonical path handling and one owning core per managed project; test symlink/path aliases, traversal attempts, competing opens, stale ownership after a crash, and Windows handle release. Opening an unknown project must not silently create an empty ledger through the current `openLedger()` behavior.
 - [x] Apply that same exclusive canonical-ledger guard to offline `verify`/`seal`/`log` before any database open. Require the owning core stopped; report `ledger_in_use` with exit 75 on contention. Hold core ownership across inactive registered projects until unregister/shutdown, and test core/CLI contention both ways before the server is introduced.
 
-#### M2.4 — Engagement metadata model
+#### M2.4 — Engagement metadata model — ✅ COMPLETE
 
-- [ ] Model client/display name, immutable engagement ID, internal code name, assessment types, roster, source IPs, escalation/deconfliction contacts and 24/7 flags, jurisdiction, and data-handling requirements. Include the documented wireless/physical/social placeholder enums without adding modules.
-- [ ] Model optional SOW/NDA/authorization metadata, NDA effective dates, and future document references. Store no attachment bytes or credentials in generic metadata; unsupported attachment operations must report that M3 support is required.
-- [ ] Model scope inclusions and exclusions for every FR-ENG-006/007 type, including mobile apps; use stable scope-object IDs and explicit absent-versus-empty scope semantics. Validate syntax without DNS lookups or target contact; leave membership verdicts to M5.
-- [ ] Model optional RoE, permitted/forbidden techniques, destructive policy (`forbid`, `require dual-control`, `allow-in-window`), testing windows, after-hours permissions, and blackout windows. Validate real dates, start/end ordering, IANA timezones, and DST ambiguity policy. Retention instructions are metadata, never an automatic destruction scheduler.
-- [ ] Test minimal Draft/Lab projects with no legal material, field limits, malformed addresses/dates, duplicate identities, clearing optional fields, and metadata round-trips through canonical ledger payloads.
+**Execution plan (17 September 2026):** Extend the pure `@pentrackr/project` domain schemas and the `@pentrackr/server` command contracts. M2.4 defines and validates the metadata; M2.5 writes updates as events and rebuilds projections, M2.9 exposes HTTP operations, M3 stores document bytes, and M5 evaluates scope and RoE. Keep `engagement.created`/`engagement.updated` version-1 readers and their hashed text unchanged. Do not reinterpret existing M2.3 project ledgers under a wider version-1 payload.
+
+1. **Version and migration boundary.** Separate historical version-1 identity metadata from the current full metadata shape. Introduce explicit version-2 creation/update payload schemas for newly represented fields, with deterministic defaults when a version-1 creation event is projected later. Keep project format and M1 envelope/hash semantics intact. Define one canonical normalization path for user input and a non-normalizing path for stored event readers. Do not make M2.3 storage accept a version-2 history until its inspection/mirror logic can validate it safely.
+2. **Identity, people, and contacts.** Add assessment-type enums, a roster with stable member IDs, one optional mapping to the persisted local operator identity, and named external participants, plus source IPs, escalation/deconfliction contacts with 24/7 flags, jurisdiction, and structured data-handling instructions. Do not design multi-user accounts or per-member platform identities. Require unique IDs and reject duplicate normalized IPs/contacts where identities would conflict. Preserve omitted versus explicit null/empty values in patches; never let metadata edits change the immutable engagement ID or project kind.
+3. **Legal references and policy.** Model optional SOW, NDA, and authorization records as descriptive metadata with opaque future document references; validate NDA effective-date order. Reject attachment bytes, local paths masquerading as document IDs, and credentials in these fields. Define optional RoE techniques, destructive policy, testing/after-hours windows, blackout windows, and retention instructions as data only. Attachment commands must return an explicit M3-unavailable result when those commands arrive; this phase does not claim stored attachments or execution enforcement.
+4. **Scope objects and time rules.** Define discriminated scope inclusion/exclusion schemas for CIDR, IP, domain, URL, ASN, cloud account/subscription/tenant, repository, and mobile app, each with a stable object ID. Keep scope omitted distinct from an explicitly empty list. Validate syntax, uniqueness, real calendar dates, ordered intervals, and IANA zones locally without DNS, cloud calls, or target contact. Accept local wall times with an IANA zone and no required UTC offset; reject nonexistent or ambiguous times at daylight-saving transitions with a field-level error. Convert valid instants to a canonical representation while preserving the entered zone; scope membership and blackout verdicts remain M5 work.
+5. **Conformance and handoff.** Cover minimal Draft/Lab metadata without legal records, all scope kinds, patch clearing/replacement, duplicate IDs, malformed addresses/dates/zones, DST edges, JSON and canonical-CBOR round-trips, and frozen version-1 event fixtures. Run lint, typecheck, coverage, traceability, hygiene, build, and three-OS CI. Update schema documentation and give M2.5 explicit replay defaults and collection correction/removal rules. Do not mark FR-ENG requirements closed from schema validation alone.
+
+**Maintainer decisions (17 September 2026):** Testing and blackout windows do not require explicit UTC offsets. Nonlocal roster members remain named external participants; multi-user operation is not anticipated in the near future. The implementation policy is to reject daylight-saving gap/overlap wall times rather than silently choose an instant. One persisted local operator identity may be mapped to a roster member; other members have no platform account mapping.
+
+**Results (17 September 2026):** Version-2 metadata, project, creation/update event, and server command schemas are implemented alongside unchanged version-1 readers. The model covers all listed scope kinds, local operator/external roster distinctions, contacts, legal references, data handling, RoE, and wall-time windows. [Metadata contract](docs/m2-metadata.md) records the handoff to M2.5/M2.9. The M2.3 storage command remains version-1-only to avoid dropping rich input. Local Linux lint, typecheck, **953 coverage tests**, traceability, hygiene, build, and packaged CLI smoke pass. [CI run 35286152875](https://github.com/CyberSecDef/pen.trackr.live/actions/runs/35286152875) passes check and package jobs on Ubuntu, Windows, and macOS; canary and security workflows pass. The phase is in [draft PR #29](https://github.com/CyberSecDef/pen.trackr.live/pull/29), stacked on M2.3. No additional SRS requirement is claimed complete.
+
+- [x] Model client/display name, immutable engagement ID, internal code name, assessment types, roster, source IPs, escalation/deconfliction contacts and 24/7 flags, jurisdiction, and data-handling requirements. Include the documented wireless/physical/social placeholder enums without adding modules.
+- [x] Model optional SOW/NDA/authorization metadata, NDA effective dates, and future document references. Store no attachment bytes or credentials in generic metadata. M2.9 reports M3 support as required for unsupported attachment operations.
+- [x] Model scope inclusions and exclusions for every FR-ENG-006/007 type, including mobile apps; use stable scope-object IDs and explicit absent-versus-empty scope semantics. Validate syntax without DNS lookups or target contact; leave membership verdicts to M5.
+- [x] Model optional RoE, permitted/forbidden techniques, destructive policy (`forbid`, `require dual-control`, `allow-in-window`), testing windows, after-hours permissions, and blackout windows. Validate real dates, start/end ordering, IANA timezones, and DST ambiguity policy. Retention instructions are metadata, never an automatic destruction scheduler.
+- [x] Test minimal Draft/Lab projects with no legal material, field limits, malformed addresses/dates, duplicate identities, clearing optional fields, and metadata round-trips through canonical ledger payloads.
 
 #### M2.5 — Event-backed mutations and projections
 
@@ -398,6 +410,7 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 - [ ] Implement versioned routes for project create/register/list/get/update/unregister, state transitions, active-context read/switch, metadata/scope queries, projection rebuild, and paginated ledger reads. Final route spellings and CLI names come from the M2.1 contract.
 - [ ] Return project list name, client, state/mode, and window; report findings/task counts as unavailable until those projections exist instead of inventing zero counts. Define deterministic sorting and bounded pagination.
 - [ ] Generate event IDs, timestamps, timezone fields, and operator attribution in the core. Accept domain commands, not arbitrary client-authored ledger envelopes; validate path/body identity agreement and revision preconditions.
+- [ ] Keep document attachment operations explicitly unavailable until M3; return an actionable M3-required error rather than accepting bytes or suggesting that metadata references are stored attachments.
 - [ ] Standardize validation, authentication, not-found, conflict, unavailable-project, unsupported-version, and internal-error responses. Apply byte limits first (413), parse JSON (400 on syntax errors), then structural depth/node budgets (413), then domain validation (400), as defined in contract v3. Test requests through Fastify injection and a real loopback listener, including malformed bodies and methods that must not mutate state.
 
 #### M2.10 — Authentication and credential lifecycle

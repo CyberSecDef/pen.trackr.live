@@ -1,6 +1,7 @@
 import { hashSchema, uuidV7Schema } from '@pentrackr/ledger'
 import { z } from 'zod'
 import { lifecycleSchema } from './lifecycle.js'
+import { metadataV2Schema } from './metadata-v2.js'
 import { nameSchema, storedNameV1Schema } from './primitives.js'
 
 /** Identity metadata floor; M2.4 adds the remaining engagement metadata. */
@@ -36,6 +37,11 @@ export const projectSchema = z.strictObject({
   metadata: metadataSchema,
   lifecycle: lifecycleSchema,
   revision: hashSchema,
+})
+/** Full engagement view for the M2.5 event-backed projection. */
+export const projectV2Schema = z.strictObject({
+  ...projectSchema.shape,
+  metadata: metadataV2Schema,
 })
 
 export type Project = z.infer<typeof projectSchema>
