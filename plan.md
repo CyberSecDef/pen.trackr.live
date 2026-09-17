@@ -2,7 +2,7 @@
 
 **Plan version:** 0.12
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1–M2.4 are complete; M2.5 is next. Decision log at §14; milestone progress tracked inline in §6.
+**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1–M2.5 are complete; M2.6 is next. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
 
@@ -17,7 +17,7 @@
 | Tests | **953** on local Linux; M2.4 three-OS CI passes |
 | Platforms verified | M2.4: local Linux and Ubuntu/Windows/macOS CI; M2.3 additionally verified on `baldr` Windows |
 | ADRs | 15; decision history and amendments indexed in `docs/adr/README.md` |
-| Next | **M2.5** — event-backed mutations and projections |
+| Next | **M2.6** — engagement state machine |
 
 **What a reader should take from that:** the tamper-evidence layer and local project storage are real and tested; the HTTP service and graphical client are still ahead. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine. The first milestone that feels like a product is M6.
 
@@ -278,7 +278,7 @@ Project rails: toolchain, CI, packaging, traceability, and the decision record.
 
 ### M2 — Projects, states, core API (M, ~40h)
 
-**Status: in progress; M2.1–M2.4 complete, M2.5 next (17 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
+**Status: in progress; M2.1–M2.5 complete, M2.6 next (17 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
 
 The original ~40h estimate predates this breakdown. Retain it as the original estimate, not a commitment; re-estimate after M2.1 resolves the lifecycle and authentication choices. Work through the phases below in order, with tests alongside each implementation and one commit per phase (D18). Unchecked boxes are remaining work; resolving the planning questions does not mark their implementation complete.
 
@@ -390,12 +390,12 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 
 **Maintainer decisions (17 September 2026):** A scope object's stable ID follows it when it changes between inclusion and exclusion; implement one audited reclassification event with the same ID. A project transferred to another installation requires explicit local-operator roster reassignment. Do not rewrite prior events or silently relabel the prior operator when opening the project.
 
-**Implementation (17 September 2026):** Typed scope events, version-aware replay, five core projection tables, V2 creation, and serialized updates are implemented. [Mutation notes](docs/m2-mutations.md) record event effects, retries, repair, and the retained staged creation path. Linux lint, typecheck, **963 tests with coverage** (93.59% statements, 85.67% branches), traceability, hygiene, build, and packaging pass. Three-OS CI and draft PR review remain the sign-off gate.
+**Results (17 September 2026):** Typed scope events, version-aware replay, five core projection tables, V2 creation, and serialized updates are implemented. [Mutation notes](docs/m2-mutations.md) record event effects, retries, repair, and the retained staged creation path. Linux lint, typecheck, **963 tests with coverage** (93.59% statements, 85.67% branches), traceability, hygiene, build, and packaging pass. [CI run 35288256679](https://github.com/CyberSecDef/pen.trackr.live/actions/runs/35288256679) passes check and package jobs on Ubuntu, Windows, and macOS; canary and security workflows pass. The phase is in [draft PR #30](https://github.com/CyberSecDef/pen.trackr.live/pull/30), stacked on M2.4. Project creation keeps M2.3's staged publication path; M2.6 lifecycle transitions will use the mutation service. No additional SRS requirement is claimed complete before M2.9's API surface.
 
-- [ ] Implement typed `engagement.created`, `engagement.updated`, `engagement.state-changed`, `scope.object-added`, and `scope.excluded` payloads. Specify correction/removal semantics for scope and other collections; add event types only when existing meanings are insufficient, preserving old events.
-- [ ] Build engagement, scope, RoE/window, roster, and contact projections using `ProjectionRunner`. Validate payload versions during replay; refuse unsupported project history clearly rather than interpreting it under the newest schema.
-- [ ] Route all business mutations through a service that checks engagement ownership and expected revision, appends durable events, catches projections up, and returns the committed revision/event identity. Prevent lost updates and define idempotency for retries after a committed event but lost response.
-- [ ] Test stale revisions, conflicting writers, duplicate retries, append/projection failure boundaries, restart catch-up, and full projection rebuild. Compare rebuilt views and unchanged ledger hashes/checkpoints; expose repair errors instead of serving stale views as current.
+- [x] Implement typed `engagement.created`, `engagement.updated`, `engagement.state-changed`, `scope.object-added`, and `scope.excluded` payloads. Specify correction/removal semantics for scope and other collections; add event types only when existing meanings are insufficient, preserving old events.
+- [x] Build engagement, scope, RoE/window, roster, and contact projections using `ProjectionRunner`. Validate payload versions during replay; refuse unsupported project history clearly rather than interpreting it under the newest schema.
+- [x] Route post-creation business mutations through a service that checks engagement ownership and expected revision, appends durable events, catches projections up, and returns the committed revision/event identity. Prevent lost updates and define idempotency for retries after a committed event but lost response.
+- [x] Test stale revisions, conflicting writers, duplicate retries, append/projection failure boundaries, restart catch-up, and full projection rebuild. Compare rebuilt views and unchanged ledger hashes/checkpoints; expose repair errors instead of serving stale views as current.
 
 #### M2.6 — Engagement state machine
 
