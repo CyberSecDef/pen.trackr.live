@@ -201,5 +201,6 @@ export const allowedTransitionsResponseSchema = z.strictObject({
 
 export type Context = z.infer<typeof contextSchema>
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>
+export type CreateProjectV2Request = z.infer<typeof createProjectV2RequestSchema>
 export type TransitionRequest = z.infer<typeof transitionRequestSchema>
 export type ErrorResponse = z.infer<typeof errorResponseSchema>

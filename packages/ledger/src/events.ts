@@ -21,6 +21,9 @@ export const EVENT_TYPES = [
 
   'scope.object-added',
   'scope.excluded',
+  'scope.object-updated',
+  'scope.object-removed',
+  'scope.object-reclassified',
   'scope.evaluated',
 
   'command.proposed',
