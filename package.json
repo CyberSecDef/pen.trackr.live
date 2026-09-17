@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.2",
     "@vitest/coverage-v8": "^5.0.0",
     "fast-check": "^4.9.0",
     "typescript": "^7.0.2",
