@@ -138,4 +138,67 @@ describe('project domain replay', () => {
       ),
     ).toThrow('previous snapshot')
   })
+
+  it('replays only command-consistent lifecycle events', () => {
+    let view = applyProjectEvent(null, genesis())
+    const paused = { ...lifecycle, state: 'paused', resume_state: 'lab' }
+    view = applyProjectEvent(
+      view,
+      event('engagement.state-changed', {
+        ...operation(),
+        command: 'pause',
+        previous: lifecycle,
+        next: paused,
+        reason: 'Operator pause',
+      }),
+    )
+    const closing = { ...lifecycle, state: 'closing', closing_origin: 'lab' }
+    view = applyProjectEvent(
+      view,
+      event('engagement.state-changed', {
+        ...operation(),
+        command: 'begin_closing',
+        previous: paused,
+        next: closing,
+        reason: 'Wrap up',
+      }),
+    )
+    expect(view.lifecycle).toEqual(closing)
+    expect(() =>
+      applyProjectEvent(
+        view,
+        event('engagement.state-changed', {
+          ...operation(),
+          command: 'close',
+          previous: closing,
+          next: lifecycle,
+          reason: 'Wrong destination',
+        }),
+      ),
+    ).toThrow('contradicts command')
+    expect(() =>
+      applyProjectEvent(
+        view,
+        event('engagement.state-changed', {
+          ...operation(),
+          command: 'activate',
+          previous: closing,
+          next: closing,
+          reason: null,
+        }),
+      ),
+    ).toThrow('invalid from previous state')
+    expect(() =>
+      applyProjectEvent(
+        view,
+        event('engagement.state-changed', {
+          ...operation(),
+          command: 'begin_closing',
+          previous: closing,
+          next: closing,
+          reason: 'Duplicate event',
+        }),
+      ),
+    ).toThrow('contradicts command')
+  })
 })

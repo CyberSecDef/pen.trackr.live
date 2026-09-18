@@ -1,10 +1,15 @@
 import { createHash } from 'node:crypto'
 import { type CborValue, encode, sealEvent, uuidV7, uuidV7Schema } from '@pentrackr/ledger'
 import {
+  allowedTransitions,
   applyProjectEvent,
   completeMetadataV2Patch,
   type ProjectView,
+  reasonSchema,
   scopeObjectSchema,
+  TransitionPolicyError,
+  transitionCommandSchema,
+  transitionLifecycle,
 } from '@pentrackr/project'
 import { z } from 'zod'
 import { catchUpProject } from './projections.js'
@@ -28,6 +33,16 @@ const commandSchema = z.discriminatedUnion('type', [
     })
     .refine((value) => value.from !== value.to),
   z.strictObject({ type: z.literal('roster.reassign'), member_id: uuidV7Schema }),
+  z
+    .strictObject({
+      type: z.literal('lifecycle.transition'),
+      command: transitionCommandSchema,
+      reason: reasonSchema.nullable(),
+    })
+    .refine((value) => value.command === 'activate' || value.reason !== null, {
+      path: ['reason'],
+      message: 'transition requires a reason',
+    }),
 ])
 export type MutationCommand = z.infer<typeof commandSchema>
 export interface MutationInput {
@@ -74,6 +89,15 @@ export class ProjectMutationService {
   private readonly storage: ProjectStorage
   constructor(storage: ProjectStorage) {
     this.storage = storage
+  }
+
+  availableTransitions(projectId: string) {
+    const project = this.storage.open(projectId)
+    return {
+      lifecycle: project.lifecycle,
+      revision: project.revision,
+      commands: allowedTransitions(project.lifecycle),
+    }
   }
 
   async execute(input: MutationInput): Promise<MutationResult> {
@@ -167,9 +191,12 @@ export class ProjectMutationService {
       throw new MutationError('stale_revision', 'expected ledger revision does not match')
     if (ledger.head()?.this_hash !== current.revision)
       throw new MutationError('projection_repair_required', 'projection does not match ledger head')
+    if (current.lifecycle.state === 'closed' && normalized.type !== 'lifecycle.transition')
+      throw new MutationError('invalid_transition', 'closed project content requires reopening')
     const payloadBase = { operation_id: input.operationId, command_hash: commandHash }
     let type:
       | 'engagement.updated'
+      | 'engagement.state-changed'
       | 'scope.object-added'
       | 'scope.excluded'
       | 'scope.object-updated'
@@ -177,7 +204,24 @@ export class ProjectMutationService {
       | 'scope.object-reclassified' = 'engagement.updated'
     let payload: Record<string, unknown>
     let noChange = false
-    if (normalized.type === 'metadata.patch') {
+    if (normalized.type === 'lifecycle.transition') {
+      try {
+        const decision = transitionLifecycle(current.lifecycle, normalized.command)
+        noChange = !decision.changed
+        type = 'engagement.state-changed'
+        payload = {
+          ...payloadBase,
+          command: normalized.command,
+          previous: current.lifecycle,
+          next: decision.next,
+          reason: normalized.reason,
+        }
+      } catch (error) {
+        if (error instanceof TransitionPolicyError)
+          throw new MutationError(error.code, error.message)
+        throw error
+      }
+    } else if (normalized.type === 'metadata.patch') {
       const patch = normalized.patch as ReturnType<typeof completeMetadataV2Patch>
       if ('scope' in patch)
         throw new MutationError('invalid_command', 'scope changes require scope operations')

@@ -1,23 +1,23 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.12
+**Plan version:** 0.13
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1–M2.5 are complete; M2.6 is next. Decision log at §14; milestone progress tracked inline in §6.
+**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1–M2.6 are complete; M2.7 is next. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
 
 ## 0. Where this stands
 
-*Updated 9 September 2026, after M2.2; latest local test baseline below.*
+*Updated 17 September 2026, after M2.6.*
 
 | | |
 |----|----|
 | Milestones complete | **M0** (rails), **M1** (ledger spine) — 2 of 18 |
 | Requirements closed | **5 of 216** — `FR-SECPL-001`, `FR-SECPL-002`, `NFR-006`, `NFR-009`, `NFR-010` |
-| Tests | **953** on local Linux; M2.4 three-OS CI passes |
-| Platforms verified | M2.4: local Linux and Ubuntu/Windows/macOS CI; M2.3 additionally verified on `baldr` Windows |
+| Tests | **985** on local Linux; M2.6 three-OS CI passes |
+| Platforms verified | M2.6: local Linux and Ubuntu/Windows/macOS CI; M2.3 additionally verified on `baldr` Windows |
 | ADRs | 15; decision history and amendments indexed in `docs/adr/README.md` |
-| Next | **M2.6** — engagement state machine |
+| Next | **M2.7** — project switching and isolation |
 
 **What a reader should take from that:** the tamper-evidence layer and local project storage are real and tested; the HTTP service and graphical client are still ahead. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine. The first milestone that feels like a product is M6.
 
@@ -278,7 +278,7 @@ Project rails: toolchain, CI, packaging, traceability, and the decision record.
 
 ### M2 — Projects, states, core API (M, ~40h)
 
-**Status: in progress; M2.1–M2.5 complete, M2.6 next (17 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
+**Status: in progress; M2.1–M2.6 complete, M2.7 next (17 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
 
 The original ~40h estimate predates this breakdown. Retain it as the original estimate, not a commitment; re-estimate after M2.1 resolves the lifecycle and authentication choices. Work through the phases below in order, with tests alongside each implementation and one commit per phase (D18). Unchecked boxes are remaining work; resolving the planning questions does not mark their implementation complete.
 
@@ -399,10 +399,19 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 
 #### M2.6 — Engagement state machine
 
-- [ ] Implement the approved M2.1 matrix as a pure transition policy plus an audited service operation. Return allowed transitions and reasons to clients; keep this logic out of CLI/HTTP handlers.
-- [ ] Preserve no-document creation and the SRS's Draft/Lab runner availability in the future runner contract. Represent Closed as runner-disabled and Closing's persistence/destructive behavior as policy information for M4/M5; do not claim execution enforcement yet.
-- [ ] Persist `resume_state` and `closing_origin` per contract v2; cancellation restores the closing origin, including paused-Draft and paused-Closing detours. Use only the six persisted lifecycle states; Blackout is a separate effective restriction evaluated in M5. Closing/Closed must not require nonexistent reports, vaults, or cleanup projections; define hooks for M8/M9.
-- [ ] Test every allowed and rejected transition, missing prerequisites, reason requirements, no-op/retry behavior, concurrent transitions, and restart/replay. Closing a project and signing a checkpoint remain distinct operations.
+**Execution plan (17 September 2026):** Implement the M2.1 [lifecycle contract](docs/m2-core-contract.md#lifecycle-and-lab-identity) on top of the M2.5 mutation service. The persisted state is one of Draft, Lab, Active, Paused, Closing, or Closed; Lab remains an immutable project kind, and Blackout stays an M5 effective restriction. There are no report, cleanup, legal-document, vault, RoE, or testing-window prerequisites for M2 transitions. The transition command and reason schemas already exist; preserve version-1 ledger readers and hashed event bytes.
+
+1. **Pure policy.** Add a lifecycle transition function that takes a validated lifecycle and one of the seven commands, returning either the exact next lifecycle, a no-op, or a typed `invalid_transition` reason. Implement the approved matrix, including paused Draft/Lab/Active, paused Closing, cancellation to `closing_origin`, and kind-based reopening. Use the same function to produce the seven command availability entries for a read-only query; allowed no-ops remain allowed. Keep reason validation at the command boundary: `activate` may omit it; all other commands require trimmed, nonblank text.
+2. **Replay and write integration.** Extend `ProjectMutationService` with a `lifecycle.transition` command, reusing its project queue, ownership, revision, idempotency, append, projection catch-up, and failure recovery path. Write one `engagement.state-changed` version-1 event for a changed transition, with command, previous/next snapshots, and reason. Persist a successful no-op in the local registry without a ledger event. During replay, run the same pure policy against the previous snapshot and reject an event whose command, next snapshot, or no-op status contradicts it; keep existing version/payload and hash verification separate. A closed project may only change content after an audited reopen; read/rebuild/switch/export and offline verification remain available.
+3. **Future execution posture.** Expose pure lifecycle policy data for M4/M5: Draft/Lab runner available, Closed runner disabled, Paused admission stopped, and Closing warns for new persistence/destructive classes unless a stricter RoE applies. Closing does not sign a checkpoint. Define small future hook contracts for runner quiescence at close and M8/M9 cleanup/report checks, without blocking M2 transitions on services that do not yet exist or claiming runner enforcement.
+4. **Verification.** Table-test all allowed, invalid, and no-op command/state/kind combinations; assert reason handling, saved-field invariants, and every closing cancellation path, especially Draft→Paused→Closing and Closing→Paused→resume/cancel. Test exact event payload/replay, restart, unknown or contradictory history, same-key and new-key no-ops, stale revisions, competing writers, append/projection failures, and hash/checkpoint stability. Run lint, typecheck, coverage, traceability, hygiene, build/package smoke, then the three-OS CI matrix. Keep HTTP route handling in M2.9 and Blackout evaluation in M5.
+
+**Results (17 September 2026):** The pure policy, audited mutation command, read-only availability query, replay validation, and future runner posture are implemented. [Lifecycle notes](docs/m2-lifecycle.md) record state effects and the M4/M5/M8/M9 handoff. Local lint, typecheck, **985 tests with coverage** (93.77% statements, 86.67% branches), traceability, hygiene, build, and packaging pass. [CI run 35290941478](https://github.com/CyberSecDef/pen.trackr.live/actions/runs/35290941478) passes check and package jobs on Ubuntu, Windows, and macOS; security and canary pass. The phase is in [draft PR #31](https://github.com/CyberSecDef/pen.trackr.live/pull/31). HTTP transition routes and actual runner/RoE enforcement remain in their scheduled phases; no additional SRS requirement is claimed complete.
+
+- [x] Implement the approved M2.1 matrix as a pure transition policy plus an audited service operation. Return allowed transitions and reasons to clients; keep this logic out of CLI/HTTP handlers.
+- [x] Preserve no-document creation and the SRS's Draft/Lab runner availability in the future runner contract. Represent Closed as runner-disabled and Closing's persistence/destructive behavior as policy information for M4/M5; do not claim execution enforcement yet.
+- [x] Persist `resume_state` and `closing_origin` per contract v2; cancellation restores the closing origin, including paused-Draft and paused-Closing detours. Use only the six persisted lifecycle states; Blackout is a separate effective restriction evaluated in M5. Closing/Closed must not require nonexistent reports, vaults, or cleanup projections; define hooks for M8/M9.
+- [x] Test every allowed and rejected transition, missing prerequisites, reason requirements, no-op/retry behavior, concurrent transitions, and restart/replay. Closing a project and signing a checkpoint remain distinct operations.
 
 #### M2.7 — Project switching and isolation
 
