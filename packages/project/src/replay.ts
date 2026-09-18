@@ -4,6 +4,7 @@ import { type ProjectEvent, parseProjectEvent } from './events.js'
 import { metadataV2FromV1, metadataV2Schema } from './metadata-v2.js'
 import { projectV2Schema } from './project.js'
 import type { scopeObjectSchema } from './scope.js'
+import { transitionLifecycle } from './transition.js'
 
 export class ProjectReplayError extends Error {
   readonly code: 'invalid_history' | 'unsupported_project'
@@ -100,9 +101,26 @@ export function applyProjectEvent(view: ProjectView | null, raw: unknown): Proje
       event.payload.previous.closing_origin !== view.lifecycle.closing_origin
     )
       throw new ProjectReplayError('invalid_history', 'lifecycle previous snapshot mismatch')
+    let decision: ReturnType<typeof transitionLifecycle>
+    try {
+      decision = transitionLifecycle(view.lifecycle, event.payload.command)
+    } catch {
+      throw new ProjectReplayError(
+        'invalid_history',
+        'lifecycle command is invalid from previous state',
+      )
+    }
+    if (
+      !decision.changed ||
+      decision.next.kind !== event.payload.next.kind ||
+      decision.next.state !== event.payload.next.state ||
+      decision.next.resume_state !== event.payload.next.resume_state ||
+      decision.next.closing_origin !== event.payload.next.closing_origin
+    )
+      throw new ProjectReplayError('invalid_history', 'lifecycle next snapshot contradicts command')
     return projectV2Schema.parse({
       ...view,
-      lifecycle: event.payload.next,
+      lifecycle: decision.next,
       revision: event.this_hash,
     })
   }
