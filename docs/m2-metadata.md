@@ -11,9 +11,13 @@ empty and null defaults when M2.5 replays older creation events.
 The model keeps one local operator identity. A roster member marked
 `local_operator` carries that operator's UUID in stored metadata; at most one such member exists. The client command omits `operator_id`, and the core fills it from the persisted registry identity.
 Every other member is an `external` participant with a name, role, stable
-roster ID, and null platform identity. M2.5 must compare the local mapping to
+roster ID, and null platform identity. M2.5 binds new local-operator writes to
 the registry's persisted operator ID. Multi-user accounts are not part of this
 model.
+
+When a project moves to another installation, its former local-operator mapping
+remains in history. Opening it does not rebind that mapping. M2.5 must provide
+an explicit audited reassignment to the new installation's operator identity.
 
 Scope is null when absent and may be explicitly present with empty inclusion
 and exclusion arrays. Objects have stable UUIDv7 IDs across both arrays.

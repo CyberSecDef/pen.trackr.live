@@ -4,6 +4,7 @@ import { lifecycleSchema } from './lifecycle.js'
 import { metadataV2Schema, storedMetadataV2PatchSchema } from './metadata-v2.js'
 import { sequenceSchema, storedReasonV1Schema, transitionCommandSchema } from './primitives.js'
 import { metadataSchema, storedMetadataPatchV1Schema } from './project.js'
+import { scopeObjectSchema } from './scope.js'
 
 const operationShape = { operation_id: uuidV7Schema, command_hash: hashSchema }
 
@@ -43,6 +44,25 @@ export const engagementUpdatedPayloadV2Schema = z.strictObject({
     'an update event requires a change',
   ),
 })
+
+export const scopeObjectAddedPayloadV1Schema = z.strictObject({
+  ...operationShape,
+  object: scopeObjectSchema,
+})
+export const scopeExcludedPayloadV1Schema = scopeObjectAddedPayloadV1Schema
+export const scopeObjectUpdatedPayloadV1Schema = scopeObjectAddedPayloadV1Schema
+export const scopeObjectRemovedPayloadV1Schema = z.strictObject({
+  ...operationShape,
+  object_id: uuidV7Schema,
+})
+export const scopeObjectReclassifiedPayloadV1Schema = z
+  .strictObject({
+    ...operationShape,
+    object_id: uuidV7Schema,
+    from: z.enum(['included', 'excluded']),
+    to: z.enum(['included', 'excluded']),
+  })
+  .refine((value) => value.from !== value.to, 'reclassification must change scope side')
 
 export const engagementStateChangedPayloadV1Schema = z
   .strictObject({
@@ -100,6 +120,31 @@ export const projectEventSchema = z
       type: z.literal('engagement.state-changed'),
       schema_version: z.literal(1),
       payload: engagementStateChangedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.object-added'),
+      schema_version: z.literal(1),
+      payload: scopeObjectAddedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.excluded'),
+      schema_version: z.literal(1),
+      payload: scopeExcludedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.object-updated'),
+      schema_version: z.literal(1),
+      payload: scopeObjectUpdatedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.object-removed'),
+      schema_version: z.literal(1),
+      payload: scopeObjectRemovedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.object-reclassified'),
+      schema_version: z.literal(1),
+      payload: scopeObjectReclassifiedPayloadV1Schema,
     }),
     base.extend({
       type: z.literal('project.switched'),

@@ -61,7 +61,13 @@ describe('event taxonomy', () => {
       'backup.restored',
     ]
     for (const type of required) expect(EVENT_TYPES).toContain(type)
-    expect(EVENT_TYPES).toHaveLength(required.length)
+    for (const type of [
+      'scope.object-updated',
+      'scope.object-removed',
+      'scope.object-reclassified',
+    ])
+      expect(EVENT_TYPES).toContain(type)
+    expect(EVENT_TYPES).toHaveLength(required.length + 3)
   })
 
   it('has no duplicate types', () => {
