@@ -44,6 +44,7 @@ export {
   eventNamespace,
   eventTypeSchema,
 } from './events.js'
+export { canonicalLedgerPath, LedgerOwnership, LedgerOwnershipError } from './ownership.js'
 export { type Projection, ProjectionRunner, timelineProjection } from './projections.js'
 export {
   CHECKPOINT_DOMAIN,
@@ -61,6 +62,7 @@ export {
   LedgerStore,
   LedgerStoreError,
   openLedger,
+  openLedgerReadOnly,
   type ReadOptions,
   SCHEMA_VERSION,
   type StoredCheckpoint,

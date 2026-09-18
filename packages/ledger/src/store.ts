@@ -234,8 +234,8 @@ function rowToEnvelope(row: EventRow): Envelope {
 export class LedgerStore {
   private readonly db: DatabaseSync
 
-  constructor(filename: string) {
-    this.db = new DatabaseSync(filename)
+  constructor(filename: string, readOnly = false) {
+    this.db = new DatabaseSync(filename, { readOnly })
 
     // Everything after the open must release the handle if it throws. Without
     // this, a rejected ledger — wrong schema version, corrupt file — leaks an
@@ -243,6 +243,14 @@ export class LedgerStore {
     // the file undeletable for the life of the process, which is how this was
     // found: CI could not clean up its own temp directory.
     try {
+      if (readOnly) {
+        const existing = this.meta('schema_version')
+        if (Number(existing) !== SCHEMA_VERSION)
+          throw new LedgerStoreError(
+            `ledger schema version ${existing ?? '(missing)'} is not supported by this build (expected ${SCHEMA_VERSION})`,
+          )
+        return
+      }
       // WAL for concurrent readers; FULL so a completed append survives a
       // process death rather than sitting in an OS buffer (NFR-006).
       this.db.exec('PRAGMA journal_mode = WAL')
@@ -565,4 +573,9 @@ export class LedgerStore {
 
 export function openLedger(filename: string): LedgerStore {
   return new LedgerStore(filename)
+}
+
+/** Inspect an existing ledger without creating or changing any file. */
+export function openLedgerReadOnly(filename: string): LedgerStore {
+  return new LedgerStore(filename, true)
 }

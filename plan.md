@@ -1,8 +1,8 @@
 # Pen Trackr — Development Plan
 
-**Plan version:** 0.11
+**Plan version:** 0.12
 **Against:** `req_spec.md` (SRS v0.2, interview-baselined 5 September 2026) — **frozen**. This plan carries every divergence; see §2.
-**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1 and M2.2 are complete; M2.3 is next. Decision log at §14; milestone progress tracked inline in §6.
+**Status:** M0 and M1 complete — see the snapshot below. M2 is in progress; M2.1–M2.3 are complete; M2.4 is next. Decision log at §14; milestone progress tracked inline in §6.
 
 ---
 
@@ -14,12 +14,12 @@
 |----|----|
 | Milestones complete | **M0** (rails), **M1** (ledger spine) — 2 of 18 |
 | Requirements closed | **5 of 216** — `FR-SECPL-001`, `FR-SECPL-002`, `NFR-006`, `NFR-009`, `NFR-010` |
-| Tests | **914 in 20 files**, 98.65% statements, 94.82% branches, 100% functions, 98.75% lines |
-| Platforms verified | Latest baseline: local Linux. M0/M1: Windows (CI + `baldr`), macOS (CI only) |
+| Tests | **944** on local Linux; **938 passed / 6 skipped** on `baldr` Windows; three-OS CI passes |
+| Platforms verified | M2.3: local Linux, `baldr` Windows, and Ubuntu/Windows/macOS CI |
 | ADRs | 15; decision history and amendments indexed in `docs/adr/README.md` |
-| Next | **M2.3** — project directories, registry, and local identity |
+| Next | **M2.4** — engagement metadata model |
 
-**What a reader should take from that:** the tamper-evidence layer is real and tested, and nothing else exists yet. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine, and none of them produce anything visible. The first milestone that feels like a product is M6.
+**What a reader should take from that:** the tamper-evidence layer and local project storage are real and tested; the HTTP service and graphical client are still ahead. Five of 216 requirements is the honest number, and it will stay small for several milestones — M2 through M5 build the spine. The first milestone that feels like a product is M6.
 
 **What was learned rather than built:**
 
@@ -278,7 +278,7 @@ Project rails: toolchain, CI, packaging, traceability, and the decision record.
 
 ### M2 — Projects, states, core API (M, ~40h)
 
-**Status: in progress; M2.1–M2.2 complete, M2.3 next (9 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
+**Status: in progress; M2.1–M2.3 complete, M2.4 next (17 September 2026).** Build an operable local core that can create and manage engagements, apply audited state changes, switch a shared project context, and serve authenticated HTTP and WebSocket clients. M2 is exercised through the CLI and API; the first graphical client remains M6.
 
 The original ~40h estimate predates this breakdown. Retain it as the original estimate, not a commitment; re-estimate after M2.1 resolves the lifecycle and authentication choices. Work through the phases below in order, with tests alongside each implementation and one commit per phase (D18). Unchecked boxes are remaining work; resolving the planning questions does not mark their implementation complete.
 
@@ -338,13 +338,25 @@ The original blanket claim to close FR-ENG-001..015 and all of §28.1 was too br
 
 #### M2.3 — Project directories, registry, and local identity
 
-- [ ] Implement ADR 0002's project layout (`ledger.db`, `project.toml`, and reserved `blobs/`, `vault/`, `files/` directories). Treat metadata/state in `project.toml` as a recoverable mirror of ledger truth, not an independent editable source.
-- [ ] Create projects with stable UUIDv7 identities and an `engagement.created` event; validate before side effects. Handle interrupted creation, existing/nonempty paths, duplicate IDs, permissions, and cleanup of only artifacts created by the failed operation.
-- [ ] Implement register/list/open/unregister according to M2.1, including moved/missing directories and conflicting registrations. Rebuild cached list metadata from each registered project's ledger; keep local path registration separate from portable engagement truth.
-- [ ] On unregister, show a warning that project files remain on disk, including the directory location and how to register it again. Return structured preservation/warning information through the API so every client can display it; test that unregister never deletes project files and that re-registration preserves identity and history.
-- [ ] Persist one local operator identity and map roster entries to it where appropriate. Validate event attribution server-side; a client cannot supply another operator or engagement identity in an envelope.
-- [ ] Validate paths against the core OS before filesystem access (wrong-platform path: 400 `invalid_path` with a field path). Enforce canonical path handling and one owning core per managed project; test symlink/path aliases, traversal attempts, competing opens, stale ownership after a crash, and Windows handle release. Opening an unknown project must not silently create an empty ledger through the current `openLedger()` behavior.
-- [ ] Apply that same exclusive canonical-ledger guard to offline `verify`/`seal`/`log` before any database open. Require the owning core stopped; report `ledger_in_use` with exit 75 on contention. Hold core ownership across inactive registered projects until unregister/shutdown, and test core/CLI contention both ways before the server is introduced.
+**Execution plan (17 September 2026; planning only):** Implement this as a storage/library phase. The HTTP listener, authenticated business CLI, full metadata, and lifecycle transition policy remain in their assigned M2 phases. Preserve M1 ledger bytes and command output except for the specified ownership contention behavior.
+
+1. **Ownership first.** Select and document an exclusive lock primitive that works on local Linux, Windows, and macOS filesystems. Use the canonical ledger path as the lock identity for managed and standalone ledgers; acquire it before `openLedger()`. Prove live-owner exclusion, release on normal exit, and OS-mediated release after a killed owner in separate processes. Reject unsupported locking explicitly; never infer a stale lock from age or PID alone. Add the shared guard to core storage entry points and offline `verify`/`seal`/`log`, with `ledger_in_use`/exit 75 on contention. Keep `keygen` independent.
+2. **Local registry and identity.** Create versioned `registry.db` beneath the resolved core data directory, with canonical registration paths, one persisted local operator UUIDv7, selection/recovery-intent slots for later phases, and append-only `core_audit` protected by update/delete triggers. Put registration and its required audit row in one transaction. Validate directory permissions and path identity before opening a project ledger; list missing, inaccessible, corrupt, unsupported, or in-use registrations with explicit availability codes.
+3. **Project creation and recovery.** Validate/normalize kind, metadata, and destination before side effects. Generate the engagement UUIDv7 and `engagement.created` envelope with the local operator ID. Build `ledger.db`, `project.toml`, and reserved directories in private staging, then publish only after the ledger append and layout are durable. Persist a registry intent across the filesystem/registry boundary; on restart finish or safely roll back only paths owned by that attempt. Explicit destinations must be absent. Default destinations use the UUID under the configured projects root.
+4. **Open, register, and unregister.** Resolve aliases to one canonical path, acquire ownership, then inspect project format and verify the ledger before any project write. Require a single engagement identity and a recognized creation event; do not silently convert M1 ledgers or create a missing ledger. Rebuild stale nonidentity `project.toml` fields from verified events; reject identity/version conflicts. Make same-ID/same-path registration idempotent, reject path/ID conflicts, and retain the registration with an error code if an existing path becomes unavailable. Unregister only an inactive project, remove only its local registry row, and return its retained path and re-registration warning; never remove project contents.
+5. **Integration and handoff.** Test two isolated projects, restart and replay, moved/missing paths, aliases and symlink substitution, interrupted creation at each durable boundary, lock contention in both core→CLI and CLI→core directions, crash release, and Windows handle cleanup. Run lint, typecheck, relevant tests, coverage/trace/hygiene, then the full `pnpm run check`; use three-OS CI for platform sign-off. Document the selected lock primitive, recovery states, and any operational backup implications before marking this phase complete.
+
+**Implementation boundary:** M2.3 needs a callable core storage API even though Fastify starts in M2.8. Keep path validation at that boundary so a wrong-platform absolute path becomes `invalid_path` with its input field; map that error to HTTP 400 when routes arrive. Retain the existing version-1 creation payload readers when M2.4 expands metadata. Do not claim a requirement closed solely because the storage portion exists.
+
+**Results (17 September 2026):** Added a SQLite exclusive-transaction ownership guard shared by core storage and offline CLI maintenance, a versioned local registry with operator identity and append-only audit, project layout/create/register/list/open/unregister, read-only verification before registration writes, mirror repair from verified creation history, and staged creation recovery. [Storage notes](docs/m2-storage.md) document the lock and recovery behavior. Linux tests cover core/CLI contention, killed-owner and killed-core recovery, missing/moved paths, symlink aliases and substitution, identity conflicts, audit immutability, preserved files, and interrupted publication. Linux lint, typecheck, **944 tests with coverage**, traceability, hygiene (outside the sandbox for its Git subprocess), build, and packaged CLI smoke pass. On Baldr (Windows 10.0.26200.9539, Node 22.23.2), lint, typecheck, **938 passed / 6 skipped** coverage tests, traceability, build, and packaged CLI smoke pass. GitHub CI run [35282878867](https://github.com/CyberSecDef/pen.trackr.live/actions/runs/35282878867) passes check and package jobs on Ubuntu, Windows, and macOS; canary and security workflows pass. The phase is in [draft PR #28](https://github.com/CyberSecDef/pen.trackr.live/pull/28). No additional requirement is marked closed: roster mapping belongs to M2.4, typed history/replay to M2.5, and HTTP error mapping and clients to M2.8–M2.12.
+
+- [x] Implement ADR 0002's project layout (`ledger.db`, `project.toml`, and reserved `blobs/`, `vault/`, `files/` directories). Treat metadata/state in `project.toml` as a recoverable mirror of ledger truth, not an independent editable source.
+- [x] Create projects with stable UUIDv7 identities and an `engagement.created` event; validate before side effects. Handle interrupted creation, existing/nonempty paths, duplicate IDs, permissions, and cleanup of only artifacts created by the failed operation.
+- [x] Implement register/list/open/unregister according to M2.1, including moved/missing directories and conflicting registrations. Rebuild cached list metadata from each registered project's ledger; keep local path registration separate from portable engagement truth.
+- [x] On unregister, return a structured warning that project files remain on disk, including the directory location and how to register it again; test that unregister never deletes project files and that re-registration preserves identity and history. M2.9 presents that response through HTTP clients.
+- [x] Persist one local operator identity and use it for server-generated creation events. M2.4 maps roster entries to that identity; M2.9 enforces attribution on client mutations.
+- [x] Validate paths against the core OS before filesystem access (`invalid_path` with a field path; M2.9 maps it to HTTP 400). Enforce canonical path handling and one owning core per managed project; test symlink/path aliases, traversal attempts, competing opens, stale ownership after a crash, and Windows handle release. Opening an unknown project must not silently create an empty ledger through the current `openLedger()` behavior.
+- [x] Apply that same exclusive canonical-ledger guard to offline `verify`/`seal`/`log` before any database open. Require the owning core stopped; report `ledger_in_use` with exit 75 on contention. Hold core ownership across inactive registered projects until unregister/shutdown, and test core/CLI contention both ways before the server is introduced.
 
 #### M2.4 — Engagement metadata model
 
