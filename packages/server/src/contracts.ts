@@ -3,8 +3,11 @@ import {
   lifecycleSchema,
   metadataInputSchema,
   metadataPatchSchema,
+  metadataV2InputSchema,
+  metadataV2PatchSchema,
   projectKindSchema,
   projectSchema,
+  projectV2Schema,
   reasonSchema,
   sequenceSchema,
   textSchema,
@@ -38,9 +41,16 @@ export const createProjectRequestSchema = z.strictObject({
   metadata: metadataInputSchema.partial({ client_name: true, code_name: true }),
   destination: absolutePathSchema.optional(),
 })
+/** Rich metadata command; M2.5 wires its event-backed implementation. */
+export const createProjectV2RequestSchema = z.strictObject({
+  kind: projectKindSchema,
+  metadata: metadataV2InputSchema,
+  destination: absolutePathSchema.optional(),
+})
 export const registerProjectRequestSchema = z.strictObject({ directory: absolutePathSchema })
 export const projectParamsSchema = z.strictObject({ project_id: uuidV7Schema })
 export const updateProjectRequestSchema = metadataPatchSchema
+export const updateProjectV2RequestSchema = metadataV2PatchSchema
 export const transitionRequestSchema = z
   .strictObject({
     command: transitionCommandSchema,
@@ -67,6 +77,17 @@ export const mutationResponseSchema = z
     event_id: uuidV7Schema.nullable(),
     changed: z.boolean(),
     project: projectSchema,
+  })
+  .refine(
+    (value) => value.changed === (value.event_id !== null),
+    'changed operations must identify their event',
+  )
+export const mutationV2ResponseSchema = z
+  .strictObject({
+    operation_id: uuidV7Schema,
+    event_id: uuidV7Schema.nullable(),
+    changed: z.boolean(),
+    project: projectV2Schema,
   })
   .refine(
     (value) => value.changed === (value.event_id !== null),
@@ -180,5 +201,6 @@ export const allowedTransitionsResponseSchema = z.strictObject({
 
 export type Context = z.infer<typeof contextSchema>
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>
+export type CreateProjectV2Request = z.infer<typeof createProjectV2RequestSchema>
 export type TransitionRequest = z.infer<typeof transitionRequestSchema>
 export type ErrorResponse = z.infer<typeof errorResponseSchema>

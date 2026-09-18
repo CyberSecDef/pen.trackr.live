@@ -1,8 +1,10 @@
 import { envelopeSchema, hashSchema, uuidV7Schema } from '@pentrackr/ledger'
 import { z } from 'zod'
 import { lifecycleSchema } from './lifecycle.js'
+import { metadataV2Schema, storedMetadataV2PatchSchema } from './metadata-v2.js'
 import { sequenceSchema, storedReasonV1Schema, transitionCommandSchema } from './primitives.js'
 import { metadataSchema, storedMetadataPatchV1Schema } from './project.js'
+import { scopeObjectSchema } from './scope.js'
 
 const operationShape = { operation_id: uuidV7Schema, command_hash: hashSchema }
 
@@ -24,6 +26,43 @@ export const engagementUpdatedPayloadV1Schema = z.strictObject({
     'an update event requires a change',
   ),
 })
+
+export const engagementCreatedPayloadV2Schema = z
+  .strictObject({
+    ...operationShape,
+    metadata: metadataV2Schema,
+    lifecycle: lifecycleSchema,
+  })
+  .refine((value) => value.lifecycle.state === (value.lifecycle.kind === 'lab' ? 'lab' : 'draft'), {
+    path: ['lifecycle', 'state'],
+    message: 'a project starts in Draft or Lab',
+  })
+export const engagementUpdatedPayloadV2Schema = z.strictObject({
+  ...operationShape,
+  patch: storedMetadataV2PatchSchema.refine(
+    (value) => Object.keys(value).length > 0,
+    'an update event requires a change',
+  ),
+})
+
+export const scopeObjectAddedPayloadV1Schema = z.strictObject({
+  ...operationShape,
+  object: scopeObjectSchema,
+})
+export const scopeExcludedPayloadV1Schema = scopeObjectAddedPayloadV1Schema
+export const scopeObjectUpdatedPayloadV1Schema = scopeObjectAddedPayloadV1Schema
+export const scopeObjectRemovedPayloadV1Schema = z.strictObject({
+  ...operationShape,
+  object_id: uuidV7Schema,
+})
+export const scopeObjectReclassifiedPayloadV1Schema = z
+  .strictObject({
+    ...operationShape,
+    object_id: uuidV7Schema,
+    from: z.enum(['included', 'excluded']),
+    to: z.enum(['included', 'excluded']),
+  })
+  .refine((value) => value.from !== value.to, 'reclassification must change scope side')
 
 export const engagementStateChangedPayloadV1Schema = z
   .strictObject({
@@ -56,7 +95,7 @@ export const projectSwitchedPayloadV1Schema = z
 
 const base = envelopeSchema.omit({ payload: true, type: true, schema_version: true })
 export const projectEventSchema = z
-  .discriminatedUnion('type', [
+  .union([
     base.extend({
       type: z.literal('engagement.created'),
       schema_version: z.literal(1),
@@ -68,9 +107,44 @@ export const projectEventSchema = z
       payload: engagementUpdatedPayloadV1Schema,
     }),
     base.extend({
+      type: z.literal('engagement.created'),
+      schema_version: z.literal(2),
+      payload: engagementCreatedPayloadV2Schema,
+    }),
+    base.extend({
+      type: z.literal('engagement.updated'),
+      schema_version: z.literal(2),
+      payload: engagementUpdatedPayloadV2Schema,
+    }),
+    base.extend({
       type: z.literal('engagement.state-changed'),
       schema_version: z.literal(1),
       payload: engagementStateChangedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.object-added'),
+      schema_version: z.literal(1),
+      payload: scopeObjectAddedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.excluded'),
+      schema_version: z.literal(1),
+      payload: scopeExcludedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.object-updated'),
+      schema_version: z.literal(1),
+      payload: scopeObjectUpdatedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.object-removed'),
+      schema_version: z.literal(1),
+      payload: scopeObjectRemovedPayloadV1Schema,
+    }),
+    base.extend({
+      type: z.literal('scope.object-reclassified'),
+      schema_version: z.literal(1),
+      payload: scopeObjectReclassifiedPayloadV1Schema,
     }),
     base.extend({
       type: z.literal('project.switched'),

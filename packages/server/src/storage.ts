@@ -26,9 +26,20 @@ import {
   openLedgerReadOnly,
   uuidV7,
 } from '@pentrackr/ledger'
-import { engagementCreatedPayloadV1Schema, type Project, projectSchema } from '@pentrackr/project'
-import { ZodError } from 'zod'
-import { type CreateProjectRequest, createProjectRequestSchema } from './contracts.js'
+import {
+  applyProjectEvent,
+  completeMetadataV2Input,
+  ProjectReplayError,
+  type ProjectView,
+  replayProject,
+} from '@pentrackr/project'
+import {
+  type CreateProjectRequest,
+  type CreateProjectV2Request,
+  createProjectRequestSchema,
+  createProjectV2RequestSchema,
+} from './contracts.js'
+import { catchUpProject } from './projections.js'
 
 export class ProjectStorageError extends Error {
   readonly code: string
@@ -49,7 +60,7 @@ export interface Registration {
   projectId: string
   directory: string
   availability: 'available' | 'missing' | 'inaccessible' | 'corrupt' | 'unsupported' | 'in_use'
-  project: Project | null
+  project: ProjectView | null
   errorCode: string | null
 }
 interface RegistrationRow {
@@ -149,7 +160,7 @@ function assertPrivateDirectory(path: string): void {
       )
   }
 }
-function mirror(project: Project): string {
+function mirror(project: ProjectView): string {
   const lines = [
     'format_version = 1',
     `engagement_id = ${JSON.stringify(project.engagement_id)}`,
@@ -175,7 +186,7 @@ function parseMirror(content: string): Record<string, string | number> {
   }
   return result
 }
-function writeMirror(path: string, project: Project): void {
+function writeMirror(path: string, project: ProjectView): void {
   const temporary = `${path}.${uuidV7()}.tmp`
   try {
     writeFileSync(temporary, mirror(project), { flag: 'wx', mode: 0o600 })
@@ -200,23 +211,7 @@ function syncDirectory(path: string): void {
     closeSync(handle)
   }
 }
-function initialProject(id: string, payload: unknown, revision: string): Project {
-  try {
-    const created = engagementCreatedPayloadV1Schema.parse(payload)
-    return projectSchema.parse({
-      format_version: 1,
-      engagement_id: id,
-      metadata: created.metadata,
-      lifecycle: created.lifecycle,
-      revision,
-    })
-  } catch (error) {
-    if (error instanceof ZodError)
-      throw new ProjectStorageError('unsupported_project', 'unsupported creation payload')
-    throw error
-  }
-}
-function eventTime(now: Date): { ts_utc: string; ts_local: string; tz: string } {
+export function eventTime(now: Date): { ts_utc: string; ts_local: string; tz: string } {
   const minutes = -now.getTimezoneOffset()
   const sign = minutes < 0 ? '-' : '+'
   const absolute = Math.abs(minutes)
@@ -271,6 +266,7 @@ export class ProjectStorage {
       CREATE TABLE IF NOT EXISTS registrations (project_id TEXT PRIMARY KEY, directory TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS intents (project_id TEXT PRIMARY KEY, staging TEXT NOT NULL, destination TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS switch_intents (operation_id TEXT PRIMARY KEY, from_project_id TEXT, to_project_id TEXT, generation INTEGER NOT NULL, stage TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS mutation_noops (operation_id TEXT PRIMARY KEY, command_hash TEXT NOT NULL, response_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS core_audit (seq INTEGER PRIMARY KEY AUTOINCREMENT, ts_utc TEXT NOT NULL, operator_id TEXT NOT NULL, operation_id TEXT NOT NULL, type TEXT NOT NULL, details TEXT NOT NULL);
       CREATE TRIGGER IF NOT EXISTS core_audit_no_update BEFORE UPDATE ON core_audit BEGIN SELECT RAISE(ABORT, 'core audit is append-only'); END;
       CREATE TRIGGER IF NOT EXISTS core_audit_no_delete BEFORE DELETE ON core_audit BEGIN SELECT RAISE(ABORT, 'core audit is append-only'); END;`)
@@ -393,6 +389,18 @@ export class ProjectStorage {
 
   create(input: CreateProjectRequest): Registration {
     const request = createProjectRequestSchema.parse(input)
+    return this.createInternal(request, 1)
+  }
+
+  createV2(input: CreateProjectV2Request): Registration {
+    const request = createProjectV2RequestSchema.parse(input)
+    return this.createInternal(request, 2)
+  }
+
+  private createInternal(
+    request: CreateProjectRequest | CreateProjectV2Request,
+    version: 1 | 2,
+  ): Registration {
     const destination =
       request.destination === undefined
         ? join(this.paths.projectsDir, uuidV7())
@@ -430,7 +438,7 @@ export class ProjectStorage {
       )
       for (const sub of ['blobs', 'vault', 'files']) mkdirSync(join(staging, sub), { mode: 0o700 })
       const ledger = openLedger(join(staging, 'ledger.db'))
-      let project: Project
+      let project: ProjectView
       try {
         const lifecycle = {
           kind: request.kind,
@@ -438,17 +446,20 @@ export class ProjectStorage {
           resume_state: null,
           closing_origin: null,
         }
-        const metadata = {
-          name: request.metadata.name,
-          client_name: request.metadata.client_name ?? null,
-          code_name: request.metadata.code_name ?? null,
-        }
+        const metadata =
+          version === 2
+            ? completeMetadataV2Input(request.metadata, this.operatorId)
+            : {
+                name: request.metadata.name,
+                client_name: request.metadata.client_name ?? null,
+                code_name: request.metadata.code_name ?? null,
+              }
         const event = ledger.append({
           event_id: uuidV7(),
           ...eventTime(new Date()),
           operator_id: this.operatorId,
           engagement_id: id,
-          schema_version: 1,
+          schema_version: version,
           type: 'engagement.created',
           payload: {
             operation_id: uuidV7(),
@@ -459,7 +470,7 @@ export class ProjectStorage {
             lifecycle,
           },
         })
-        project = initialProject(id, event.payload, event.this_hash)
+        project = applyProjectEvent(null, event)
       } finally {
         ledger.close()
       }
@@ -481,7 +492,7 @@ export class ProjectStorage {
     }
   }
 
-  private inspect(directory: string): Project {
+  private inspect(directory: string): ProjectView {
     assertPrivateDirectory(directory)
     for (const name of ['blobs', 'vault', 'files']) {
       const path = join(directory, name)
@@ -518,11 +529,7 @@ export class ProjectStorage {
         )
       const events = ledger.read()
       const first = events[0]?.envelope
-      if (
-        first?.type !== 'engagement.created' ||
-        first.schema_version !== 1 ||
-        first.prev_hash !== null
-      )
+      if (first?.type !== 'engagement.created' || first.prev_hash !== null)
         throw new ProjectStorageError(
           'unsupported_project',
           'recognized engagement.created genesis is required',
@@ -533,13 +540,14 @@ export class ProjectStorage {
           'corrupt_project',
           'project contains another engagement identity',
         )
-      if (events.length !== 1)
-        throw new ProjectStorageError('unsupported_project', 'project history requires M2.5 replay')
-      const project = initialProject(
-        id,
-        first.payload,
-        events.at(-1)?.envelope.this_hash ?? first.this_hash,
-      )
+      let project: ProjectView
+      try {
+        project = replayProject(events)
+      } catch (error) {
+        if (error instanceof ProjectReplayError)
+          throw new ProjectStorageError(error.code, error.message)
+        throw error
+      }
       const markerPath = join(directory, 'project.toml')
       if (existsSync(markerPath)) {
         const saved = parseMirror(readFileSync(markerPath, 'utf8'))
@@ -566,7 +574,7 @@ export class ProjectStorage {
       return this.get(existing.project_id)
     }
     const lock = LedgerOwnership.acquire(join(directory, 'ledger.db'))
-    let project: Project
+    let project: ProjectView
     try {
       project = this.inspect(directory)
     } catch (error) {
@@ -593,6 +601,12 @@ export class ProjectStorage {
       ledger = openLedger(join(directory, 'ledger.db'))
       if (ledger.head()?.this_hash !== project.revision)
         throw new ProjectStorageError('unsafe_path', 'ledger changed after verification')
+      const projected = catchUpProject(ledger)
+      if (JSON.stringify(projected) !== JSON.stringify(project))
+        throw new ProjectStorageError(
+          'invalid_history',
+          'project projection differs from verified history',
+        )
       const markerPath = join(directory, 'project.toml')
       if (!existsSync(markerPath) || readFileSync(markerPath, 'utf8') !== mirror(project))
         writeMirror(markerPath, project)
@@ -620,18 +634,60 @@ export class ProjectStorage {
     }
   }
 
-  open(id: string): Project {
+  open(id: string): ProjectView {
     const row = this.rows().find((item) => item.project_id === id)
     if (!row) throw new ProjectStorageError('project_not_found', 'project is not registered')
     if (this.owned.has(id)) return this.inspectRead(id)
-    return this.register(row.directory, id).project as Project
+    return this.register(row.directory, id).project as ProjectView
   }
-  private inspectRead(id: string): Project {
+  private inspectRead(id: string): ProjectView {
     const owned = this.owned.get(id)
     if (!owned) throw new ProjectStorageError('project_not_found', 'project not open')
-    const first = owned.ledger.read({ limit: 1 })[0]?.envelope
-    if (!first) throw new ProjectStorageError('corrupt_project', 'missing creation event')
-    return initialProject(id, first.payload, owned.ledger.head()?.this_hash ?? first.this_hash)
+    try {
+      return catchUpProject(owned.ledger)
+    } catch (error) {
+      if (error instanceof ProjectReplayError)
+        throw new ProjectStorageError(error.code, error.message)
+      throw error
+    }
+  }
+  /** The mutation service uses the already-owned ledger, never a fresh path open. */
+  ledgerForMutation(id: string): LedgerStore {
+    const owned = this.owned.get(id)
+    if (!owned) this.open(id)
+    const current = this.owned.get(id)
+    if (!current) throw new ProjectStorageError('project_not_found', 'project is not open')
+    return current.ledger
+  }
+  findMutationEvent(
+    operationId: string,
+  ): { projectId: string; seq: number; event: ReturnType<LedgerStore['head']> } | null {
+    for (const [projectId, owned] of this.owned) {
+      for (const entry of owned.ledger.read()) {
+        const payload = entry.envelope.payload
+        if (
+          payload !== null &&
+          typeof payload === 'object' &&
+          'operation_id' in payload &&
+          payload.operation_id === operationId
+        )
+          return { projectId, seq: entry.seq, event: entry.envelope }
+      }
+    }
+    return null
+  }
+  readMutationNoop(operationId: string): { commandHash: string; response: unknown } | null {
+    const row = this.db
+      .prepare('SELECT command_hash, response_json FROM mutation_noops WHERE operation_id = ?')
+      .get(operationId) as { command_hash: string; response_json: string } | undefined
+    return row ? { commandHash: row.command_hash, response: JSON.parse(row.response_json) } : null
+  }
+  saveMutationNoop(operationId: string, commandHash: string, response: unknown): void {
+    this.transaction(() => {
+      this.db
+        .prepare('INSERT INTO mutation_noops VALUES (?, ?, ?)')
+        .run(operationId, commandHash, JSON.stringify(response))
+    })
   }
   get(id: string): Registration {
     const row = this.rows().find((item) => item.project_id === id)
